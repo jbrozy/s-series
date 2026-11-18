@@ -150,3 +150,36 @@ type LLMCache struct {
 
 func (l LLMCache) Get(key string) (string, bool) { return l.R.Get("scheck:llm:" + key) }
 func (l LLMCache) Set(key, value string)         { _ = l.R.SetEX("scheck:llm:"+key, l.TTL, value) }
+
+// ---------------------------------------------------------------- sessions per user
+
+func userSessionsKey(uid string) string { return "scheck:usess:" + uid }
+
+// TrackSession remembers a session token for a user (to end all sessions later).
+func (r *Redis) TrackSession(uid, token string, ttl time.Duration) {
+	_, _ = r.do("SADD", userSessionsKey(uid), token)
+	r.Expire(userSessionsKey(uid), ttl)
+}
+
+// UntrackSession forgets a session token.
+func (r *Redis) UntrackSession(uid, token string) {
+	_, _ = r.do("SREM", userSessionsKey(uid), token)
+}
+
+// EndUserSessions deletes all sessions of a user except keep (may be empty).
+func (r *Redis) EndUserSessions(uid, keep string) int {
+	toks, err := redis.Strings(r.do("SMEMBERS", userSessionsKey(uid)))
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, t := range toks {
+		if t == keep {
+			continue
+		}
+		_, _ = r.do("DEL", "scheck:sess:"+t)
+		_, _ = r.do("SREM", userSessionsKey(uid), t)
+		n++
+	}
+	return n
+}

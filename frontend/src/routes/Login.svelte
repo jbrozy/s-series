@@ -41,21 +41,21 @@
 <main class="wrap">
   <section class="intro">
     <div class="logo">
-      <svg viewBox="0 0 32 32" width="40" height="40"><rect width="32" height="32" rx="7" fill="#1f6fb8"/><path d="M9 17.5l4.5 4.5L23 11" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span>S-Check</span>
     </div>
     <h1>Inhaltliche Prüfung für S-Series-Dokumentation</h1>
-    <p>Exportierte Projektdateien hochladen und semantische Fehler finden, die keine Schemaprüfung sieht:</p>
-    <ul>
+    <p class="lead">Exportierte Projektdateien hochladen und semantische Fehler finden, die keine Schemaprüfung sieht.</p>
+    <h2 class="scope">Was S-Check prüft</h2>
+    <ol>
       <li>doppelte Listeneinträge, Schritte und Vorbedingungen</li>
       <li>falsch geschriebene, doppelte oder uneinheitliche Überschriften</li>
       <li>defekte Verweise, widersprüchliche Abkürzungen und Benennungen</li>
       <li>projektspezifische Business Rules inkl. BREX-Import</li>
       <li>Körperteile in Abbildungen erkennen und normgerecht unkenntlich machen</li>
-    </ul>
+    </ol>
   </section>
 
-  <form class="card card-pad stack" onsubmit={submit} novalidate aria-describedby={error ? 'login-error' : undefined}>
+  <form class="card stack" onsubmit={submit} novalidate aria-describedby={error ? 'login-error' : undefined}>
     <h2>{mode === 'login' ? 'Anmelden' : cfg.firstUser ? 'Ersten Administrator anlegen' : 'Konto erstellen'}</h2>
     {#if mode === 'register'}
       <label><span class="lbl">Name</span><input bind:value={name} required autocomplete="name" /></label>
@@ -83,14 +83,25 @@
 
 <style>
   .wrap {
-    min-height: 100vh; display: grid; grid-template-columns: 1.1fr 420px; gap: 60px;
-    align-items: center; max-width: 1100px; margin: 0 auto; padding: 40px;
+    min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.15fr) 400px; gap: var(--s-8);
+    align-items: center; max-width: 1120px; margin: 0 auto; padding: var(--s-7) var(--s-6);
   }
-  .intro { color: var(--ink-2); }
-  .logo { display: flex; align-items: center; gap: 12px; font-size: 22px; font-weight: 700; color: var(--ink); margin-bottom: 28px; }
-  .intro h1 { font-size: 30px; line-height: 1.2; color: var(--ink); margin-bottom: 14px; max-width: 520px; }
-  .intro ul { margin: 14px 0 0; padding-left: 20px; line-height: 1.9; }
-  form { padding: 28px; }
+  .intro { color: var(--ink-2); border-top: 3px solid var(--rule); padding-top: var(--s-4); }
+  .logo { display: flex; align-items: center; gap: var(--s-3); font-family: var(--font-head); font-size: 24px; font-weight: 600; color: var(--ink); margin-bottom: var(--s-6); }
+  .intro h1 { font-size: 40px; line-height: 1.1; color: var(--ink); margin-bottom: var(--s-4); max-width: 560px; }
+  .lead { font-size: var(--t-lg); max-width: 520px; margin-bottom: var(--s-5); }
+  .intro ol { list-style: none; counter-reset: c; margin: var(--s-2) 0 0; padding: 0; border-top: 1px solid var(--line-strong); max-width: 560px; }
+  .intro li { counter-increment: c; display: grid; grid-template-columns: 40px 1fr; padding: var(--s-2) 0; border-bottom: 1px solid var(--line); }
+  .intro li::before { content: counter(c); font-family: var(--font-head); font-weight: 600; color: var(--accent); }
+  .scope { font-size: var(--t-lg); margin-bottom: var(--s-1); }
+  form { padding: var(--s-5); border-top: 4px solid var(--accent); box-shadow: var(--e-1); }
+  form h2 { margin-bottom: var(--s-1); }
+  form .primary { justify-content: center; min-height: 40px; }
   .switch { text-align: center; }
-  @media (max-width: 860px) { .wrap { grid-template-columns: 1fr; } .intro { display: none; } }
+  @media (max-width: 900px) {
+    .wrap { grid-template-columns: minmax(0, 1fr); gap: var(--s-5); padding: var(--s-5) var(--s-4); align-content: start; }
+    .intro h1 { font-size: 28px; }
+    .intro ol, .lead, .scope { display: none; }
+    .logo { margin-bottom: var(--s-3); }
+  }
 </style>

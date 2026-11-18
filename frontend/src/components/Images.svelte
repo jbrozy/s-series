@@ -1,4 +1,5 @@
 <script>
+  import LoadError from './LoadError.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { api, labels } from '../lib/api.js';
   import { href } from '../lib/router.svelte.js';
@@ -22,8 +23,10 @@
   onMount(load);
   onDestroy(() => clearTimeout(timer));
 
+  let loadError = $state(null);
   async function load() {
-    try { images = await api.get(`/snapshots/${snapshot.id}/images`); } catch (e) { toastError(e); images = []; }
+    loadError = null;
+    try { images = await api.get(`/snapshots/${snapshot.id}/images`); } catch (e) { loadError = e; return; }
     clearTimeout(timer);
     if (images.some((i) => i.status === 'detecting')) timer = setTimeout(load, 2500);
   }
@@ -57,8 +60,10 @@
   dabei als neutrale Silhouette dargestellt, damit weiterhin erkennbar ist, <em>dass</em> es sich um eine Hand handelt. Gesichter werden verpixelt.
 </p>
 
-{#if images === null}
-  <div class="empty">Lade …</div>
+{#if loadError}
+  <LoadError what="Die Bilder" error={loadError} onretry={load} />
+{:else if images === null}
+  <div class="empty" role="status">Bilder werden geladen …</div>
 {:else if shown.length === 0}
   <div class="card empty">Keine Bilder in dieser Ansicht.</div>
 {:else}
@@ -91,7 +96,7 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
   .tile { color: var(--ink); overflow: hidden; display: flex; flex-direction: column; }
   .tile:hover { text-decoration: none; border-color: var(--accent); }
-  .thumb { height: 170px; background: #eceef2 repeating-conic-gradient(#f4f5f7 0 25%, #eceef2 0 50%) 0 0 / 16px 16px; display: grid; place-items: center; overflow: hidden; }
+  .thumb { height: 170px; background: var(--surface-sunken) repeating-conic-gradient(var(--bg) 0 25%, var(--surface-sunken) 0 50%) 0 0 / 16px 16px; display: grid; place-items: center; overflow: hidden; }
   .thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .vec { font-weight: 700; color: var(--muted); font-size: 20px; }
   .meta { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }

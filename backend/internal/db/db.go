@@ -33,7 +33,7 @@ func Open(ctx context.Context, url string) (*sql.DB, error) {
 			db.Close()
 		}
 		lastErr = err
-		log.Printf("Datenbank noch nicht erreichbar (%v) – neuer Versuch …", err)
+		log.Printf("Datenbank noch nicht erreichbar (%v), neuer Versuch …", err)
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()

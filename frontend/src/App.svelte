@@ -9,6 +9,7 @@
   import ImageEditor from './routes/ImageEditor.svelte';
   import Admin from './routes/Admin.svelte';
   import Account from './routes/Account.svelte';
+  import Report from './routes/Report.svelte';
 
   onMount(async () => {
     try {
@@ -32,41 +33,46 @@
   }
 
   let menuOpen = $state(false);
+  let userBtn = $state();
 </script>
 
-<svelte:window onclick={() => (menuOpen = false)} />
+<svelte:window
+  onclick={() => (menuOpen = false)}
+  onkeydown={(e) => { if (e.key === 'Escape' && menuOpen) { menuOpen = false; userBtn?.focus(); } }}
+/>
 
 {#if !session.ready}
   <div class="boot">S-Check wird geladen …</div>
 {:else if !session.user}
   <Login />
 {:else}
-  <a class="skip-link" href="#inhalt" onclick={(e) => { e.preventDefault(); document.getElementById('inhalt')?.focus(); }}>Zum Inhalt springen</a>
-  <header class="top">
+  <a class="skip-link no-print" href="#inhalt" onclick={(e) => { e.preventDefault(); document.getElementById('inhalt')?.focus(); }}>Zum Inhalt springen</a>
+  <header class="top no-print">
     <a class="brand" href={href('/')}>
-      <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#1f6fb8"/><path d="M9 17.5l4.5 4.5L23 11" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span>S-Check</span>
       <small>S-Series Inhaltsprüfung</small>
     </a>
+    {#if !session.user.mustChangePassword}
     <nav aria-label="Hauptnavigation">
       <a href={href('/')} class:active={route.parts.length === 0 || route.parts[0] === 'p'}>Projekte</a>
       {#if session.user.role === 'admin'}
         <a href={href('/admin')} class:active={route.parts[0] === 'admin'}>Administration</a>
       {/if}
     </nav>
+    {/if}
     <div class="spacer"></div>
     <div class="user">
-      <button class="ghost userbtn" aria-haspopup="menu" aria-expanded={menuOpen} onclick={(e) => { e.stopPropagation(); menuOpen = !menuOpen; }}>
+      <button class="ghost userbtn" bind:this={userBtn} aria-label="Benutzermenü: {session.user.name}" aria-controls="usermenu" aria-expanded={menuOpen} onclick={(e) => { e.stopPropagation(); menuOpen = !menuOpen; }}>
         <span class="avatar">{session.user.name.slice(0, 1).toUpperCase()}</span>
-        <span>{session.user.name}</span>
+        <span class="uname">{session.user.name}</span>
       </button>
       {#if menuOpen}
-        <div class="menu card">
+        <div class="menu card" id="usermenu">
           <div class="menu-head">
             <strong>{session.user.name}</strong>
             <span class="muted">{session.user.email}</span>
           </div>
-          <a href={href('/account')}>Konto & Passwort</a>
+          {#if !session.user.mustChangePassword}<a href={href('/account')}>Konto & Passwort</a>{/if}
           <button class="ghost" onclick={logout}>Abmelden</button>
         </div>
       {/if}
@@ -74,7 +80,13 @@
   </header>
 
   <main id="inhalt" tabindex="-1">
-    {#if route.parts[0] === 'p' && route.parts[2] === 'images' && route.parts[3]}
+    {#if session.user.mustChangePassword}
+      <Account forced />
+    {:else if route.parts[0] === 'p' && route.parts[2] === 'report'}
+      {#key route.parts[1] + (route.query.snap || '')}
+        <Report pid={route.parts[1]} sid={route.query.snap || ''} />
+      {/key}
+    {:else if route.parts[0] === 'p' && route.parts[2] === 'images' && route.parts[3]}
       {#key route.parts[3]}
         <ImageEditor pid={route.parts[1]} iid={route.parts[3]} />
       {/key}
@@ -92,7 +104,7 @@
   </main>
 {/if}
 
-<div class="toasts" role="status" aria-live="polite">
+<div class="toasts no-print" role="status" aria-live="polite">
   {#each toasts.items as t (t.id)}
     <div class="toast {t.kind}">{t.message}</div>
   {/each}
@@ -100,34 +112,54 @@
 
 <style>
   main:focus { outline: none; }
-  .boot { padding: 80px; text-align: center; color: var(--muted); }
+  .boot { padding: var(--s-8); text-align: center; color: var(--muted); }
   .top {
     position: sticky; top: 0; z-index: 20;
-    display: flex; align-items: center; gap: 28px;
-    height: 54px; padding: 0 22px;
-    background: var(--header); color: #fff;
+    display: flex; align-items: center; gap: var(--s-5);
+    height: 56px; padding: 0 var(--s-5);
+    background: var(--header); color: var(--header-ink);
+    border-bottom: 3px solid var(--accent);
   }
-  .brand { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 700; font-size: 16px; }
+  .brand { display: flex; align-items: center; gap: var(--s-3); color: var(--header-ink); flex: none; }
   .brand:hover { text-decoration: none; }
-  .brand small { font-weight: 400; color: #9fb0c3; font-size: 12.5px; margin-left: 2px; }
-  nav { display: flex; gap: 4px; }
-  nav a { color: #c3cfdc; padding: 6px 12px; border-radius: 6px; font-weight: 500; }
-  nav a:hover { color: #fff; background: rgba(255,255,255,.08); text-decoration: none; }
-  nav a.active { color: #fff; background: rgba(255,255,255,.12); }
-  .spacer { flex: 1; }
-  .user { position: relative; }
-  .userbtn { color: #e6edf5; }
-  .userbtn:hover { background: rgba(255,255,255,.1) !important; }
-  .avatar {
-    width: 26px; height: 26px; border-radius: 50%; background: #2c4a6b; color: #fff;
-    display: inline-grid; place-items: center; font-weight: 700; font-size: 13px;
+  .brand span { font-family: var(--font-head); font-weight: 600; font-size: 20px; }
+  .brand small { font-size: var(--t-sm); color: var(--header-muted); padding-left: var(--s-3); border-left: 1px solid #3a3f46; }
+  nav { display: flex; gap: var(--s-1); align-self: stretch; min-width: 0; }
+  nav a {
+    display: flex; align-items: center; padding: 0 var(--s-3);
+    color: var(--header-muted); font-weight: 500;
+    border-bottom: 3px solid transparent; margin-bottom: -3px;
   }
-  .menu { position: absolute; right: 0; top: 44px; min-width: 230px; padding: 6px; display: flex; flex-direction: column; color: var(--ink); }
-  .menu-head { padding: 8px 10px 10px; border-bottom: 1px solid var(--line); margin-bottom: 4px; display: flex; flex-direction: column; }
-  .menu a, .menu button { padding: 8px 10px; border-radius: 6px; color: var(--ink); text-align: left; justify-content: flex-start; }
+  nav a:hover { color: var(--header-ink); text-decoration: none; }
+  nav a.active { color: var(--header-ink); border-bottom-color: var(--focus); }
+  .spacer { flex: 1; }
+  .user { position: relative; flex: none; }
+  .userbtn { color: var(--header-ink); padding: var(--s-1) var(--s-2); }
+  .userbtn:hover { background: rgba(255, 255, 255, .08) !important; }
+  .avatar {
+    width: 28px; height: 28px; border-radius: var(--r-1); background: var(--header-ink); color: var(--header);
+    display: inline-grid; place-items: center; font-family: var(--font-head); font-weight: 600; font-size: 14px;
+  }
+  .menu {
+    position: absolute; right: 0; top: 46px; min-width: 240px; padding: var(--s-1);
+    display: flex; flex-direction: column; color: var(--ink); box-shadow: var(--e-2);
+  }
+  .menu-head { padding: var(--s-2) var(--s-3) var(--s-3); border-bottom: 1px solid var(--line); margin-bottom: var(--s-1); display: flex; flex-direction: column; overflow-wrap: anywhere; }
+  .menu a, .menu button { padding: var(--s-2) var(--s-3); border-radius: var(--r-1); color: var(--ink); text-align: left; justify-content: flex-start; }
   .menu a:hover { background: var(--surface-2); text-decoration: none; }
-  .toasts { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 100; }
-  .toast { padding: 10px 14px; border-radius: 8px; background: #1d2939; color: #fff; box-shadow: var(--shadow); max-width: 420px; font-size: 13.5px; }
-  .toast.error { background: var(--error); }
-  .toast.ok { background: #1f5130; }
+  .toasts { position: fixed; right: var(--s-5); bottom: var(--s-5); left: auto; display: flex; flex-direction: column; gap: var(--s-2); z-index: 100; }
+  .toast {
+    padding: var(--s-3) var(--s-4); border-radius: var(--r-1); background: var(--header); color: var(--header-ink);
+    box-shadow: var(--e-2); max-width: 420px; font-size: var(--t-sm); border-left: 4px solid var(--accent);
+  }
+  .toast.error { border-left-color: #e5484d; }
+  .toast.ok { border-left-color: #3fa66b; }
+  @media (max-width: 900px) { .brand small { display: none; } }
+  @media (max-width: 640px) {
+    .top { gap: var(--s-3); padding: 0 var(--s-3); }
+    .brand span { font-size: 17px; }
+    nav a { padding: 0 var(--s-2); }
+    .uname { display: none; }
+    .toasts { left: var(--s-3); right: var(--s-3); bottom: var(--s-3); }
+  }
 </style>

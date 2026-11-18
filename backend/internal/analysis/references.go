@@ -60,13 +60,20 @@ func CheckReferences(c *Corpus) []Finding {
 			}
 			switch n.Name {
 			case "dmRef":
+				if n.Attr("scheckMissing") != "" {
+					f := newFinding(d, n, CatReferences, "REF_LINK_MISSING", SevWarning,
+						fmt.Sprintf("Link auf %s führt ins Leere: Die Seite ist nicht im HTML-Export enthalten.", q(n.Attr("scheckHref"))))
+					f.Suggestion = "Seite nachliefern oder Linkziel korrigieren."
+					out = append(out, f)
+					break
+				}
 				target := s1000d.RefDMC(n)
 				if target == "" {
 					break
 				}
 				if target == d.DMC {
 					out = append(out, newFinding(d, n, CatReferences, "REF_SELF", SevInfo,
-						"Datenmodul verweist auf sich selbst – ggf. internalRef verwenden."))
+						"Datenmodul verweist auf sich selbst. Für Ziele im selben Modul internalRef verwenden."))
 				} else if !dmcs[target] && n.Ancestor("dmStatus", "identAndStatusSection") == nil {
 					f := newFinding(d, n, CatReferences, "REF_DM_MISSING", SevWarning,
 						fmt.Sprintf("Referenziertes Datenmodul %s ist nicht im Export enthalten.", target))

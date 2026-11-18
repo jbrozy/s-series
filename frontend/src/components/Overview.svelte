@@ -1,4 +1,5 @@
 <script>
+  import LoadError from './LoadError.svelte';
   import { api, upload, fmt, labels } from '../lib/api.js';
   import { go, href } from '../lib/router.svelte.js';
   import { toast, toastError } from '../lib/state.svelte.js';
@@ -78,7 +79,7 @@
     for (const f of files) fd.append('files', f.file, f.path);
     try {
       const snap = await upload(`/projects/${project.id}/snapshots`, fd, (p) => (progress = p));
-      toast(`Upload „${snap.label}“ mit ${snap.fileCount} Dateien gespeichert – Indexierung läuft`);
+      toast(`Upload „${snap.label}“ mit ${snap.fileCount} Dateien gespeichert. Indexierung läuft.`);
       files = [];
       label = '';
       go(`/p/${project.id}/overview`, { snap: snap.id });
@@ -111,6 +112,18 @@
 
   // ---- data modules
   let dmFiles = $state(null);
+  let filesError = $state(null);
+  let release = $state(null);
+  $effect(() => {
+    const id = snapshot?.id;
+    const run = snapshot?.latestRun?.status;
+    release = null;
+    if (!id || run !== 'done') return;
+    api.get(`/snapshots/${id}/release`).then((r) => (release = r)).catch(() => (release = null));
+  });
+  const relText = { approved: 'Freigegeben', rejected: 'Abgelehnt' };
+  const gateText = { passed: 'Freigabekriterien erfüllt', failed: 'Freigabekriterien nicht erfüllt', pending: 'Freigabekriterien noch nicht bewertbar' };
+  let filesReload = $state(0);
   let dmFilter = $state('');
   let viewFile = $state(null);
   $effect(() => {
@@ -118,7 +131,9 @@
     const st = snapshot?.status;
     const run = snapshot?.latestRun?.status;
     if (!id || st !== 'ready') { dmFiles = null; return; }
-    api.get(`/snapshots/${id}/files`).then((f) => (dmFiles = f)).catch(() => (dmFiles = []));
+    void filesReload;
+    filesError = null;
+    api.get(`/snapshots/${id}/files`).then((f) => (dmFiles = f)).catch((e) => { filesError = e; dmFiles = null; });
     void run;
   });
   const shownFiles = $derived(
@@ -137,11 +152,11 @@
 <div class="layout">
   <div class="main stack">
     {#if snapshot}
-      <section class="card card-pad stack">
-        <div class="row">
+      <section class="ruled stack summary">
+        <div class="row wrap">
           <div class="grow">
             <h2>{snapshot.label}</h2>
-            <p class="muted">Hochgeladen {fmt.date(snapshot.createdAt)} von {snapshot.uploadedBy} · {fmt.num(snapshot.fileCount)} Dateien · {fmt.bytes(snapshot.totalBytes)}</p>
+            <p class="muted meta">Hochgeladen {fmt.date(snapshot.createdAt)} von {snapshot.uploadedBy} · {fmt.num(snapshot.fileCount)} Dateien · {fmt.bytes(snapshot.totalBytes)}</p>
           </div>
           {#if run?.status === 'done'}
             <span class="badge ok">Geprüft</span>
@@ -153,20 +168,24 @@
         </div>
         {#if snapshot.error}<div class="error-box">{snapshot.error}</div>{/if}
 
-        <div class="stats">
-          <div class="stat"><span class="n">{fmt.num(snapshot.kinds?.dm || 0)}</span><span>Datenmodule</span></div>
-          <div class="stat"><span class="n">{fmt.num(snapshot.kinds?.icn || 0)}</span><span>Grafiken</span></div>
-          <div class="stat"><span class="n">{fmt.num((snapshot.kinds?.pm || 0) + (snapshot.kinds?.brex || 0) + (snapshot.kinds?.dml || 0))}</span><span>PM / BREX / DML</span></div>
+        <div class="plate">
+          <dl class="group">
+            <div class="cell"><dt>Datenmodule</dt><dd>{fmt.num(snapshot.kinds?.dm || 0)}</dd></div>
+            <div class="cell"><dt>Grafiken</dt><dd>{fmt.num(snapshot.kinds?.icn || 0)}</dd></div>
+            <div class="cell"><dt>PM / BREX / DML</dt><dd>{fmt.num((snapshot.kinds?.pm || 0) + (snapshot.kinds?.brex || 0) + (snapshot.kinds?.dml || 0))}</dd></div>
+          </dl>
           {#if run?.status === 'done'}
-            <a class="stat err" href={href(`/p/${project.id}/findings`, { snap: snapshot.id, severity: 'error' })}><span class="n">{fmt.num(sum.bySeverity?.error || 0)}</span><span>Fehler</span></a>
-            <a class="stat warn" href={href(`/p/${project.id}/findings`, { snap: snapshot.id, severity: 'warning' })}><span class="n">{fmt.num(sum.bySeverity?.warning || 0)}</span><span>Warnungen</span></a>
-            <a class="stat inf" href={href(`/p/${project.id}/findings`, { snap: snapshot.id, severity: 'info' })}><span class="n">{fmt.num(sum.bySeverity?.info || 0)}</span><span>Hinweise</span></a>
+            <div class="group sev" aria-label="Befunde nach Schweregrad">
+              <a class="cell err" href={href(`/p/${project.id}/findings`, { snap: snapshot.id, severity: 'error' })}><span class="k">Fehler</span><span class="v">{fmt.num(sum.bySeverity?.error || 0)}</span></a>
+              <a class="cell warn" href={href(`/p/${project.id}/findings`, { snap: snapshot.id, severity: 'warning' })}><span class="k">Warnungen</span><span class="v">{fmt.num(sum.bySeverity?.warning || 0)}</span></a>
+              <a class="cell inf" href={href(`/p/${project.id}/findings`, { snap: snapshot.id, severity: 'info' })}><span class="k">Hinweise</span><span class="v">{fmt.num(sum.bySeverity?.info || 0)}</span></a>
+            </div>
           {/if}
         </div>
 
         {#if run}
           <div class="runbox">
-            <div class="row">
+            <div class="row wrap">
               <strong>Letzte Analyse</strong>
               <span class="muted">{fmt.date(run.createdAt)}</span>
               <span class="spacer"></span>
@@ -185,6 +204,21 @@
           </div>
         {/if}
 
+        {#if release}
+          <div class="releaseline r-{release.current && !release.stale ? release.current.decision : 'none'}">
+            {#if release.current && !release.stale}
+              <strong>{relText[release.current.decision]}</strong>
+              <span>von {release.current.userName}, {fmt.date(release.current.decidedAt)}</span>
+            {:else}
+              <strong>{release.current ? 'Neu zu entscheiden' : 'Noch nicht freigegeben'}</strong>
+              <span>{gateText[release.gate.state]}</span>
+            {/if}
+            <span class="spacer"></span>
+            <a href={href(`/p/${project.id}/release`, { snap: snapshot.id })}>Zur Freigabe</a>
+            <a href={href(`/p/${project.id}/report`, { snap: snapshot.id })}>Prüfbericht</a>
+          </div>
+        {/if}
+
         <div class="row wrap">
           {#if run?.status === 'done'}
             <a class="btn primary" href={href(`/p/${project.id}/findings`, { snap: snapshot.id })}>Befunde ansehen</a>
@@ -198,9 +232,11 @@
         </div>
       </section>
 
-      {#if dmFiles}
+      {#if filesError}
+        <LoadError what="Die Dateien des Uploads" error={filesError} onretry={() => filesReload++} />
+      {:else if dmFiles}
         <section class="card">
-          <div class="row card-pad sect-head">
+          <div class="row wrap card-pad sect-head">
             <h3 class="grow">Dateien im Upload</h3>
             <input class="filter" aria-label="Dateien filtern" placeholder="DMC, Titel, Datei …" bind:value={dmFilter} />
           </div>
@@ -230,7 +266,7 @@
                 {/each}
               </tbody>
             </table>
-            {#if shownFiles.length > 400}<p class="hint card-pad">{shownFiles.length - 400} weitere – Filter verwenden.</p>{/if}
+            {#if shownFiles.length > 400}<p class="hint card-pad">{shownFiles.length - 400} weitere Dateien. Grenzen Sie die Liste mit dem Filter ein.</p>{/if}
           </div>
         </section>
       {/if}
@@ -244,7 +280,7 @@
 
   <aside class="stack">
     {#if canEdit}
-      <section class="card card-pad stack">
+      <section class="ruled stack">
         <h3>Projektexport hochladen</h3>
         <div
           class="drop" class:over={dragOver} role="button" tabindex="0"
@@ -252,10 +288,10 @@
           ondragleave={() => (dragOver = false)}
           ondrop={onDrop}
           onclick={() => fileInput.click()}
-          onkeydown={(e) => e.key === 'Enter' && fileInput.click()}
+          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } }}
         >
           <strong>Dateien oder Ordner hierher ziehen</strong>
-          <span class="hint">ZIP-Export, Datenmodule (XML/SGML), Publikationsmodule, BREX und Grafiken (PNG, JPG, TIFF, SVG, CGM …)</span>
+          <span class="hint">ZIP-Export, Datenmodule (XML/SGML), HTML-Export (Seiten + Bilder), Publikationsmodule, BREX und Grafiken (PNG, JPG, TIFF, SVG, CGM …)</span>
         </div>
         <input type="file" multiple bind:this={fileInput} onchange={onPick} hidden />
         <input type="file" webkitdirectory multiple bind:this={folderInput} onchange={onPick} hidden />
@@ -280,7 +316,7 @@
     {/if}
 
     {#if snapshots.length > 1}
-      <section class="card card-pad stack">
+      <section class="ruled stack">
         <h3>Frühere Uploads</h3>
         <ul class="history">
           {#each snapshots as s}
@@ -320,34 +356,66 @@
 {/if}
 
 <style>
-  .layout { display: grid; grid-template-columns: 1fr 360px; gap: 18px; align-items: start; }
-  .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
-  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; color: var(--muted); font-size: 12.5px; }
-  .stat .n { font-size: 22px; font-weight: 700; color: var(--ink); }
-  a.stat:hover { text-decoration: none; border-color: var(--line-strong); }
-  .stat.err .n { color: var(--error); }
-  .stat.warn .n { color: var(--warning); }
-  .stat.inf .n { color: var(--info); }
-  .runbox { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
-  .notes { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s-6); align-items: start; }
+  .main { gap: var(--s-6); }
+  aside { gap: var(--s-6); }
+  .summary h2 { font-size: 24px; margin-top: 2px; }
+  .meta { font-size: var(--t-sm); }
+
+  /* type plate: one strip, cells divided by rules */
+  .plate { display: flex; flex-wrap: wrap; border: 1px solid var(--ink-2); border-radius: var(--r-1); background: var(--surface); }
+  .group { display: flex; flex: 1 1 300px; margin: 0; }
+  .group + .group { border-left: 1px solid var(--ink-2); }
+  .cell { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: var(--s-2) var(--s-3) var(--s-3); min-width: 0; }
+  .cell + .cell { border-left: 1px solid var(--line); }
+  .cell dt, .cell .k { font-family: var(--font-head); font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
+  .cell dd, .cell .v { margin: 0; font-family: var(--font-head); font-size: 30px; font-weight: 600; line-height: 1.1; color: var(--ink); }
+  .sev .cell { border-top: 4px solid transparent; color: var(--ink); }
+  .sev .cell:hover { background: var(--surface-2); text-decoration: none; }
+  .sev .cell:hover .k { text-decoration: underline; }
+  .sev .err { border-top-color: var(--error); } .sev .err .v { color: var(--error); }
+  .sev .warn { border-top-color: var(--warning); } .sev .warn .v { color: var(--warning); }
+  .sev .inf { border-top-color: var(--info); } .sev .inf .v { color: var(--info); }
+
+  .runbox { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: var(--s-3) 0; display: flex; flex-direction: column; gap: var(--s-2); }
+  .runbox .muted { font-size: var(--t-sm); }
+  .releaseline { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-2) var(--s-3); padding: var(--s-2) var(--s-3);
+    border: 1px solid var(--line-strong); border-radius: var(--r-1); background: var(--surface); }
+  .releaseline strong { font-family: var(--font-head); font-size: var(--t-lg); }
+  .releaseline span:not(.spacer) { color: var(--ink-2); font-size: var(--t-sm); }
+  .releaseline a { font-size: var(--t-sm); text-decoration: underline; text-underline-offset: 2px; }
+  .r-approved { border-color: var(--ok); background: var(--ok-soft); }
+  .r-rejected { border-color: var(--error); background: var(--error-soft); }
+  .notes { margin: 0; padding-left: var(--s-4); color: var(--ink-2); font-size: var(--t-sm); overflow-wrap: anywhere; }
+
   .drop {
-    border: 2px dashed var(--line-strong); border-radius: 10px; padding: 26px 16px; text-align: center;
-    display: flex; flex-direction: column; gap: 6px; cursor: pointer; background: var(--surface-2);
+    border: 1px dashed var(--ink-2); border-radius: var(--r-1); padding: var(--s-5) var(--s-4); text-align: center;
+    display: flex; flex-direction: column; gap: var(--s-2); cursor: pointer; background: var(--surface);
   }
-  .drop.over, .drop:hover { border-color: var(--accent); background: var(--accent-soft); }
-  .picked ul { margin: 6px 0 0; padding-left: 16px; font-size: 12px; }
-  .check { gap: 8px; }
-  .opt { display: flex; gap: 10px; align-items: flex-start; }
+  .drop.over, .drop:hover { border-color: var(--accent); border-style: solid; background: var(--accent-soft); }
+  .picked ul { margin: var(--s-2) 0 0; padding-left: var(--s-4); font-size: var(--t-xs); }
+  .check { gap: var(--s-2); }
+  .opt { display: flex; gap: var(--s-3); align-items: flex-start; }
   .opt input { margin-top: 3px; }
-  .sect-head { padding-bottom: 10px; }
-  .filter { max-width: 280px; }
+  .sect-head { padding-bottom: var(--s-3); }
+  .filter { width: 280px; max-width: 100%; }
   .tablewrap { max-height: 560px; overflow: auto; border-top: 1px solid var(--line); }
-  .link { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; text-align: left; white-space: normal; }
+  .link { border: none; background: none; padding: 0; min-height: 0; color: var(--accent); cursor: pointer; text-align: left; white-space: normal; font-weight: 400; }
   .link:hover { text-decoration: underline; background: none !important; }
   .err { color: var(--error); }
-  .history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-  .history li { display: flex; flex-direction: column; padding: 6px 8px; border-radius: 6px; }
-  .history li.current { background: var(--accent-soft); }
-  .empty-state { padding: 48px; text-align: center; display: flex; flex-direction: column; gap: 10px; }
-  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(3, 1fr); } }
+  .history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .history li { display: flex; flex-direction: column; padding: var(--s-2) var(--s-3); border-left: 3px solid transparent; border-bottom: 1px solid var(--line); }
+  .history li.current { border-left-color: var(--accent); background: var(--surface); }
+  .history li.current a { font-weight: 600; color: var(--ink); }
+  .history .hint { font-size: var(--t-xs); }
+  .empty-state { padding: var(--s-7) var(--s-5); text-align: center; display: flex; flex-direction: column; gap: var(--s-3); border-style: dashed; border-color: var(--line-strong); }
+  @media (max-width: 1100px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .sect-head .grow { min-width: 180px; }
+  .runbox .muted { white-space: nowrap; }
+  @media (max-width: 640px) {
+    .tablewrap th:nth-child(1), .tablewrap td:nth-child(1), .tablewrap th:nth-child(4), .tablewrap td:nth-child(4) { display: none; }
+    .group { flex-basis: 100%; }
+    .group + .group { border-left: none; border-top: 1px solid var(--ink-2); }
+    .cell dd, .cell .v { font-size: 22px; }
+  }
 </style>

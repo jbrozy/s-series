@@ -17,6 +17,7 @@ type Config struct {
 	RedisDB       int
 	DataDir       string
 	MigrationsDir string
+	ToolsDir      string // prebuilt scheck-ci binaries offered for download
 	Workers       int
 	MaxUploadMB   int64
 	SessionHours  int
@@ -81,6 +82,7 @@ func Load() Config {
 		RedisDB:       envInt("REDIS_DB", 0),
 		DataDir:       env("SCHECK_DATA_DIR", "./data"),
 		MigrationsDir: env("SCHECK_MIGRATIONS_DIR", "../database/migrations"),
+		ToolsDir:      env("SCHECK_TOOLS_DIR", "/app/tools"),
 		Workers:       envInt("SCHECK_WORKERS", 2),
 		MaxUploadMB:   int64(envInt("SCHECK_MAX_UPLOAD_MB", 2048)),
 		SessionHours:  envInt("SCHECK_SESSION_HOURS", 168),

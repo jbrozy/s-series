@@ -35,7 +35,7 @@ func KindByName(path string) string {
 	switch {
 	case IsRaster(path) || IsVector(path):
 		return KindICN
-	case IsXML(path):
+	case IsXML(path) || IsHTML(path):
 		return KindXML
 	}
 	return KindOther
@@ -64,6 +64,14 @@ type Doc struct {
 	InfoCode string
 	SNSKey   string
 	Content  string // first element below <content>, e.g. description, procedure
+	Code     DMCode
+	Source   string // "" for XML, SourceHTML for converted HTML pages
+}
+
+// DMCode holds the parts of a data module code that describe the product
+// breakdown (standard numbering system).
+type DMCode struct {
+	MIC, SDC, SC, SSC, SSSC, Assy, DC, DCV, IC, ICV, ILC string
 }
 
 func (d *Doc) Title() string {
@@ -83,6 +91,9 @@ func (d *Doc) Label() string {
 
 // Parse parses an XML file and extracts identity information.
 func Parse(fileID, path string, data []byte) (*Doc, error) {
+	if IsHTML(path) {
+		return ParseHTML(fileID, path, data)
+	}
 	root, err := xmldoc.Parse(data)
 	if err != nil {
 		return nil, err
@@ -96,6 +107,10 @@ func Parse(fileID, path string, data []byte) (*Doc, error) {
 			if code := dc.Child("dmCode"); code != nil {
 				d.DMC = FormatDMC(code)
 				d.InfoCode = code.Attr("infoCode") + code.Attr("infoCodeVariant")
+				a := func(n string) string { return strings.ToUpper(code.Attr(n)) }
+				d.Code = DMCode{MIC: a("modelIdentCode"), SDC: a("systemDiffCode"), SC: a("systemCode"), SSC: a("subSystemCode"),
+					SSSC: a("subSubSystemCode"), Assy: a("assyCode"), DC: a("disassyCode"), DCV: a("disassyCodeVariant"),
+					IC: a("infoCode"), ICV: a("infoCodeVariant"), ILC: a("itemLocationCode")}
 				d.SNSKey = snsKey(code)
 			}
 			if iss := dc.Child("issueInfo"); iss != nil {
@@ -297,6 +312,9 @@ func RenderNode(content *xmldoc.Node, maxChars int) string {
 			if dmc := RefDMC(x); dmc != "" {
 				return " [→ " + dmc + "] ", true
 			}
+			if href := x.Attr("scheckHref"); href != "" {
+				return " [→ " + href + "] ", true
+			}
 		}
 		return "", false
 	}
@@ -361,7 +379,7 @@ func RenderNode(content *xmldoc.Node, maxChars int) string {
 			emit(n, depth, "[Grafik] ", n.Attr("infoEntityIdent"))
 			return
 		case "dmRef":
-			emit(n, depth, "[Verweis] ", RefDMC(n))
+			emit(n, depth, "[Verweis] ", firstNonEmpty(RefDMC(n), n.Attr("scheckHref")))
 			return
 		case "name":
 			if p := n.Parent; p != nil && (p.Name == "supplyDescr" || p.Name == "spareDescr" || p.Name == "supportEquipDescr") {

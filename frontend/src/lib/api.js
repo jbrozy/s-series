@@ -8,20 +8,30 @@ export class ApiError extends Error {
   }
 }
 
+// Readable message when the server gave none (proxy errors, outages, lost connection).
+function fallbackMessage(status) {
+  if (status === 0) return 'Keine Verbindung zum S-Check-Server. Netzwerk prüfen und erneut versuchen.';
+  if (status === 502 || status === 503 || status === 504) return 'Der S-Check-Server ist gerade nicht erreichbar. Bitte in einer Minute erneut versuchen oder den Administrator informieren.';
+  if (status >= 500) return 'Auf dem Server ist ein Fehler aufgetreten. Bitte erneut versuchen; tritt er wieder auf, den Administrator informieren.';
+  if (status === 413) return 'Die Datei ist zu groß für den Server.';
+  return 'Die Anfrage wurde abgelehnt (HTTP ' + status + ').';
+}
+
 async function request(method, url, body) {
   const opts = { method, credentials: 'same-origin', headers: { 'X-Requested-With': 'scheck' } };
   if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
   }
-  const res = await fetch('/api' + url, opts);
+  let res;
+  try { res = await fetch('/api' + url, opts); } catch { throw new ApiError(0, fallbackMessage(0)); }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json().catch(() => null) : await res.text();
   if (res.status === 401 && !url.startsWith('/auth/')) {
     session.user = null;
     go('/login');
   }
-  if (!res.ok) throw new ApiError(res.status, (data && data.error) || res.statusText || 'Fehler');
+  if (!res.ok) throw new ApiError(res.status, (data && data.error) || fallbackMessage(res.status));
   return data;
 }
 
@@ -43,7 +53,7 @@ export async function postBlob(url, body) {
   });
   if (!res.ok) {
     const d = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, d.error || res.statusText);
+    throw new ApiError(res.status, d.error || fallbackMessage(res.status));
   }
   return URL.createObjectURL(await res.blob());
 }
@@ -59,16 +69,16 @@ export function upload(url, formData, onProgress) {
       let data = null;
       try { data = JSON.parse(xhr.responseText); } catch { /* ignore */ }
       if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-      else reject(new ApiError(xhr.status, data?.error || 'Upload fehlgeschlagen'));
+      else reject(new ApiError(xhr.status, data?.error || 'Upload fehlgeschlagen: ' + fallbackMessage(xhr.status)));
     };
-    xhr.onerror = () => reject(new ApiError(0, 'Netzwerkfehler beim Upload'));
+    xhr.onerror = () => reject(new ApiError(0, 'Upload abgebrochen: ' + fallbackMessage(0)));
     xhr.send(formData);
   });
 }
 
 export const fmt = {
   date(d) {
-    if (!d) return '–';
+    if (!d) return 'unbekannt';
     return new Date(d).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   },
   bytes(n) {
@@ -105,9 +115,9 @@ export const labels = {
   kind: { dm: 'Datenmodul', pm: 'Publikationsmodul', dml: 'DM-Liste', brex: 'BREX', icn: 'Grafik (ICN)', xml: 'XML', other: 'Sonstige' },
   role: { owner: 'Eigentümer', editor: 'Redakteur', viewer: 'Leser' },
   ruleType: {
-    xpath_forbidden: 'XPath – verboten',
-    xpath_required: 'XPath – erforderlich',
-    xpath_values: 'XPath – zulässige Werte',
+    xpath_forbidden: 'XPath: verboten',
+    xpath_required: 'XPath: erforderlich',
+    xpath_values: 'XPath: zulässige Werte',
     forbidden_terms: 'Unzulässige Begriffe',
     title_case: 'Schreibweise Überschriften',
     sentence_length: 'Satzlänge',

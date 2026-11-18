@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ func ruleTemplates() []rules.Rule {
 				Message: "Datenmodule müssen als 01 (nicht klassifiziert) gekennzeichnet sein."}),
 		mk("Prozeduren mit Sicherheitshinweisen", rules.TypeXPathRequired, "info", false,
 			rules.XPathConfig{XPath: "//warning | //caution | //@warningRefs | //@cautionRefs",
-				Message:   "Prozedur enthält keinen Warn- oder Vorsichtshinweis – prüfen, ob Gefährdungen bestehen.",
+				Message:   "Prozedur enthält keinen Warn- oder Vorsichtshinweis. Prüfen, ob Gefährdungen bestehen.",
 				AppliesTo: rules.AppliesTo{Contents: []string{"procedure"}}}),
 	}
 }
@@ -117,6 +118,7 @@ func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request, u *Use
 		return
 	}
 	in.ID, in.Source = id, "manual"
+	s.audit(r, u, pid, "rule.create", "rule", in.ID, "Regel „"+in.Name+"“ angelegt", map[string]any{"type": in.Type, "severity": in.Severity, "config": in.Config})
 	writeJSON(w, 201, in)
 }
 
@@ -147,12 +149,25 @@ func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request, u *Use
 		writeErr(w, 400, "Regel ungültig: "+err.Error())
 		return
 	}
+	var old struct {
+		Name, Severity string
+		Enabled        bool
+		Config         []byte
+	}
+	_ = s.db.QueryRowContext(r.Context(), `SELECT name, severity, enabled, config FROM business_rules WHERE id=$1`, id).Scan(&old.Name, &old.Severity, &old.Enabled, &old.Config)
 	if _, err := s.db.ExecContext(r.Context(), `UPDATE business_rules SET name=$1, type=$2, severity=$3, enabled=$4, config=$5, updated_at=now()
 		WHERE id=$6`, in.Name, in.Type, in.Severity, in.Enabled, string(in.Config), id); err != nil {
 		fail(w, err)
 		return
 	}
 	in.ID = id
+	summary := "Regel „" + in.Name + "“ geändert"
+	if old.Enabled != in.Enabled && old.Name == in.Name && old.Severity == in.Severity && string(old.Config) == string(in.Config) {
+		summary = map[bool]string{true: "Regel „" + in.Name + "“ aktiviert", false: "Regel „" + in.Name + "“ deaktiviert"}[in.Enabled]
+	}
+	s.audit(r, u, pid, "rule.update", "rule", id, summary, map[string]any{
+		"before": map[string]any{"name": old.Name, "severity": old.Severity, "enabled": old.Enabled, "config": json.RawMessage(nonEmptyJSON(old.Config))},
+		"after":  map[string]any{"name": in.Name, "severity": in.Severity, "enabled": in.Enabled, "config": in.Config}})
 	writeJSON(w, 200, in)
 }
 
@@ -166,10 +181,13 @@ func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request, u *Use
 		fail(w, err)
 		return
 	}
+	var name string
+	_ = s.db.QueryRowContext(r.Context(), `SELECT name FROM business_rules WHERE id=$1`, id).Scan(&name)
 	if _, err := s.db.ExecContext(r.Context(), `DELETE FROM business_rules WHERE id=$1`, id); err != nil {
 		fail(w, err)
 		return
 	}
+	s.audit(r, u, pid, "rule.delete", "rule", id, "Regel „"+name+"“ gelöscht", nil)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -245,5 +263,13 @@ func (s *Server) handleImportBREX(w http.ResponseWriter, r *http.Request, u *Use
 		fail(w, err)
 		return
 	}
+	s.audit(r, u, pid, "rule.import_brex", "snapshot", in.SnapshotID, fmt.Sprintf("%d Regeln aus BREX importiert (bisherige BREX-Regeln ersetzt)", len(imported)), nil)
 	writeJSON(w, 200, map[string]int{"imported": len(imported)})
+}
+
+func nonEmptyJSON(b []byte) []byte {
+	if len(b) == 0 {
+		return []byte("{}")
+	}
+	return b
 }

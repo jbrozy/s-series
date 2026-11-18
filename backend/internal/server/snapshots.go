@@ -293,6 +293,10 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, u *User) {
 		log.Printf("Job konnte nicht eingereiht werden: %v", err)
 	}
 	snap, _ := s.loadSnapshot(r.Context(), sid)
+	if snap != nil {
+		s.audit(r, u, snap.ProjectID, "snapshot.upload", "snapshot", sid, fmt.Sprintf("Upload „%s“ mit %d Dateien hochgeladen", snap.Label, snap.FileCount),
+			map[string]any{"files": snap.FileCount, "bytes": snap.TotalBytes, "autoAnalyze": autoAnalyze})
+	}
 	writeJSON(w, 201, snap)
 }
 
@@ -382,15 +386,19 @@ func (s *Server) handleGetSnapshot(w http.ResponseWriter, r *http.Request, u *Us
 
 func (s *Server) handleDeleteSnapshot(w http.ResponseWriter, r *http.Request, u *User) {
 	sid := r.PathValue("sid")
-	if _, err := s.requireSnapshot(r.Context(), sid, u, "editor"); err != nil {
+	pid, err := s.requireSnapshot(r.Context(), sid, u, "editor")
+	if err != nil {
 		fail(w, err)
 		return
 	}
+	var label string
+	_ = s.db.QueryRowContext(r.Context(), `SELECT label FROM snapshots WHERE id=$1`, sid).Scan(&label)
 	if _, err := s.db.ExecContext(r.Context(), `DELETE FROM snapshots WHERE id=$1`, sid); err != nil {
 		fail(w, err)
 		return
 	}
 	s.removeSnapshotFiles(sid)
+	s.audit(r, u, pid, "snapshot.delete", "snapshot", sid, "Upload „"+label+"“ mit allen Prüfergebnissen gelöscht", nil)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -440,6 +448,9 @@ func contentType(p string) string {
 	switch ext {
 	case ".xml", ".sgm", ".sgml":
 		return "text/xml; charset=utf-8"
+	case ".htm", ".html", ".xhtml", ".js", ".mjs", ".css":
+		// uploaded web pages are shown as source, never executed in the app origin
+		return "text/plain; charset=utf-8"
 	case ".cgm":
 		return "image/cgm"
 	case ".svg":
@@ -463,9 +474,9 @@ func (s *Server) handleFileContent(w http.ResponseWriter, r *http.Request, u *Us
 		return
 	}
 	w.Header().Set("Content-Type", contentType(p))
-	if strings.HasSuffix(strings.ToLower(p), ".svg") {
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
-	}
+	// uploaded content is untrusted: no scripts, no requests, own origin
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if r.URL.Query().Get("download") == "1" {
 		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": path.Base(p)}))
 	}
@@ -521,7 +532,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request, u *User) {
 	}
 	if sn.LatestRun != nil && sn.LatestRun.Status == "done" {
 		if zf, err := zw.Create("S-Check-Befunde.csv"); err == nil {
-			_ = s.writeFindingsCSV(r.Context(), zf, sn.LatestRun.ID)
+			_ = s.writeFindingsCSV(r.Context(), zf, sn.LatestRun.ID, sn.ProjectID)
 		}
 	}
 }

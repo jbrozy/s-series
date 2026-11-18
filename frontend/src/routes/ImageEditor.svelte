@@ -124,7 +124,7 @@
       image = await api.post(`/images/${iid}/anonymize`, payload());
       dirty = false;
       await renderPreview(true);
-      toast('Anonymisierte Grafik gespeichert – wird im Export verwendet');
+      toast('Anonymisierte Grafik gespeichert. Der Export verwendet sie anstelle des Originals.');
     } catch (e) { toastError(e); } finally { busy = false; }
   }
 
@@ -179,7 +179,7 @@
       <a href={href(`/p/${pid}/images`, { snap })}>Bilder</a> / <span class="mono">{image.icn}</span>
     </div>
     <div class="row head">
-      <h1 class="grow mono title">{image.icn}</h1>
+      <h1 class="grow title">{image.icn}</h1>
       <span class="badge {statusClass[image.status]}">{labels.imageStatus[image.status]}</span>
       {#if idx > 0}<a class="btn small" href={href(`/p/${pid}/images/${siblings[idx - 1].id}`, { snap })}>‹ Vorheriges</a>{/if}
       {#if idx >= 0 && idx < siblings.length - 1}<a class="btn small" href={href(`/p/${pid}/images/${siblings[idx + 1].id}`, { snap })}>Nächstes ›</a>{/if}
@@ -243,7 +243,7 @@
                   {#each Object.entries(labels.mode) as [k, v]}<option value={k}>{v}</option>{/each}
                 </select>
               </label>
-              <p class="hint">„Silhouette“ ersetzt die Hand durch eine neutrale Fläche mit Kontur – die Form bleibt erkennbar, Hautfarbe, Struktur und Merkmale verschwinden.</p>
+              <p class="hint">„Silhouette“ ersetzt die Hand durch eine neutrale Fläche mit Kontur. Die Form bleibt erkennbar, Hautfarbe, Struktur und Merkmale verschwinden.</p>
             </div>
           {/if}
         </section>
@@ -255,7 +255,7 @@
               <button class="grow" onclick={save} disabled={busy || !dirty}>Nur Markierungen speichern</button>
             </div>
             <button onclick={redetect} disabled={busy}>Automatisch neu erkennen</button>
-            <button onclick={markClean} disabled={busy}>Keine Körperteile – freigeben</button>
+            <button onclick={markClean} disabled={busy}>Keine Körperteile, freigeben</button>
             {#if image.anonymized}
               <a class="btn" href={`/api/images/${iid}/anonymized?download=1`}>Anonymisierte Grafik herunterladen</a>
             {/if}
@@ -278,27 +278,27 @@
   .crumbs { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
   .head { margin-bottom: 14px; }
   .title { font-size: 17px; }
-  .layout { display: grid; grid-template-columns: 1fr 330px; gap: 16px; align-items: start; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; align-items: start; }
   .canvas-card { overflow: hidden; }
   .viewbar { padding: 10px 12px; border-bottom: 1px solid var(--line); gap: 14px; }
-  .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 7px; overflow: hidden; }
+  .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-1); overflow: hidden; }
   .seg button { border: none; border-radius: 0; }
   .seg button.on { background: var(--accent); color: #fff; }
-  .stagewrap { padding: 14px; background: #e9ecf0 repeating-conic-gradient(#f2f4f6 0 25%, #e9ecf0 0 50%) 0 0 / 18px 18px; display: grid; place-items: center; }
+  .stagewrap { padding: 14px; background: var(--surface-sunken) repeating-conic-gradient(var(--bg) 0 25%, var(--surface-sunken) 0 50%) 0 0 / 18px 18px; display: grid; place-items: center; }
   .stage { position: relative; user-select: none; touch-action: none; cursor: crosshair; }
   .stage img { width: 100%; height: 100%; display: block; pointer-events: none; }
-  .box { position: absolute; border: 2px solid #c8282e; background: rgba(229, 72, 77, .12); cursor: move; }
-  .box.manual { border-color: #b86200; background: rgba(245, 159, 0, .12); }
+  .box { position: absolute; border: 2px solid var(--error); background: rgba(163, 22, 27, .12); cursor: move; }
+  .box.manual { border-color: var(--warning); background: rgba(138, 83, 0, .12); }
   .box.sel { outline: 2px solid #fff; box-shadow: 0 0 0 4px rgba(11, 79, 138, .8); }
-  .tag { position: absolute; left: -2px; top: -22px; background: #c8282e; color: #fff; font-size: 11.5px; padding: 1px 6px; border-radius: 4px 4px 0 0; white-space: nowrap; }
-  .box.manual .tag { background: #9a5200; }
+  .tag { position: absolute; left: -2px; top: -22px; background: var(--error); color: #fff; font-size: var(--t-xs); padding: 1px 6px; border-radius: var(--r-1) var(--r-1) 0 0; white-space: nowrap; }
+  .box.manual .tag { background: var(--warning); }
   .handle { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: #fff; border: 2px solid var(--accent); border-radius: 2px; cursor: nwse-resize; }
   .boxes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-  .boxes li { display: flex; align-items: center; border-radius: 6px; }
+  .boxes li { display: flex; align-items: center; border-radius: var(--r-1); }
   .boxes li.sel { background: var(--accent-soft); }
   .pick { flex: 1; flex-direction: column; align-items: flex-start; gap: 0; }
   .editsel { border-top: 1px solid var(--line); padding-top: 12px; }
   .small-info { font-size: 13px; }
   .small-info .lbl { display: block; font-size: 12px; font-weight: 600; color: var(--muted); }
-  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+  @media (max-width: 1000px) { .layout { grid-template-columns: minmax(0, 1fr); } }
 </style>

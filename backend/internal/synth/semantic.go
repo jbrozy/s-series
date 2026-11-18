@@ -427,7 +427,7 @@ func (g *generator) unitError(r *rand.Rand, d *s1000d.Doc) (sample, bool) {
 	frag := g.fragment(unitOf(el), el)
 	undo()
 	inj := analysis.LLMFinding{Code: "UNIT_ERROR", Severity: analysis.SevError,
-		Message:    fmt.Sprintf("Unplausible Einheit: „%s“ – die Größenordnung passt nicht.", repl),
+		Message:    fmt.Sprintf("Unplausible Einheit: „%s“, die Größenordnung passt nicht.", repl),
 		Suggestion: fmt.Sprintf("Einheit prüfen (vermutlich „%s“).", orig)}
 	return sample{fragment: frag, injected: []analysis.LLMFinding{inj}}, true
 }

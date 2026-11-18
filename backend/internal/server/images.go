@@ -80,7 +80,7 @@ func (s *Server) requireImage(ctx context.Context, iid string, u *User, min stri
 func (s *Server) detectSnapshotImages(ctx context.Context, sid string) (int, error) {
 	det := imaging.NewDetector(s.modelSettings(ctx).Vision)
 	if det == nil {
-		return -1, fmt.Errorf("Bildanalyse ist deaktiviert – Bilder können manuell geprüft werden")
+		return -1, fmt.Errorf("Bildanalyse ist deaktiviert, Bilder können manuell geprüft werden")
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id FROM images WHERE snapshot_id=$1 AND status IN ('pending','failed')`, sid)
 	if err != nil {
@@ -111,7 +111,7 @@ func (s *Server) detectSnapshotImages(ctx context.Context, sid string) (int, err
 func (s *Server) detectImage(ctx context.Context, iid string) error {
 	det := imaging.NewDetector(s.modelSettings(ctx).Vision)
 	if det == nil {
-		_, _ = s.db.ExecContext(ctx, `UPDATE images SET status='review', error='Bildanalyse ist deaktiviert – bitte manuell prüfen', updated_at=now() WHERE id=$1`, iid)
+		_, _ = s.db.ExecContext(ctx, `UPDATE images SET status='review', error='Bildanalyse ist deaktiviert. Bitte manuell prüfen.', updated_at=now() WHERE id=$1`, iid)
 		return nil
 	}
 	return s.detectWith(ctx, iid, det)
@@ -197,7 +197,7 @@ func (s *Server) imageFindings(ctx context.Context, sid string) []analysis.Findi
 				parts = append(parts, imaging.LabelDE(d.Label))
 			}
 			f.Code, f.Severity = "IMAGE_BODY_PARTS", analysis.SevError
-			f.Message = fmt.Sprintf("Bild %s zeigt menschliche Körperteile (%s) – laut Standard unzulässig, muss unkenntlich gemacht werden.", im.ICN, strings.Join(dedupStr(parts), ", "))
+			f.Message = fmt.Sprintf("Bild %s zeigt menschliche Körperteile (%s). Laut Standard unzulässig, muss unkenntlich gemacht werden.", im.ICN, strings.Join(dedupStr(parts), ", "))
 			f.Suggestion = "Im Bild-Editor prüfen und anonymisieren (Hände bleiben als Silhouette erkennbar)."
 		case "failed":
 			f.Code, f.Severity, f.Message = "IMAGE_CHECK_FAILED", analysis.SevWarning, fmt.Sprintf("Bild %s konnte nicht geprüft werden: %s", im.ICN, im.Error)
@@ -404,6 +404,8 @@ func (s *Server) handleSaveDetections(w http.ResponseWriter, r *http.Request, u 
 		fail(w, err)
 		return
 	}
+	pid, _ := s.projectOfSnapshot(r.Context(), im.SnapshotID)
+	s.audit(r, u, pid, "image.detections", "image", im.ICN, fmt.Sprintf("Markierungen in %s gespeichert (%d Bereiche)", im.ICN, len(dets)), map[string]any{"detections": dets})
 	im, _ = s.loadImage(r.Context(), im.ID)
 	writeJSON(w, 200, im)
 }
@@ -505,6 +507,8 @@ func (s *Server) handleAnonymize(w http.ResponseWriter, r *http.Request, u *User
 		fail(w, err)
 		return
 	}
+	pid, _ := s.projectOfSnapshot(r.Context(), im.SnapshotID)
+	s.audit(r, u, pid, "image.anonymize", "image", im.ICN, fmt.Sprintf("%s anonymisiert (%d Bereiche)", im.ICN, len(dets)), map[string]any{"detections": dets})
 	im, _ = s.loadImage(r.Context(), im.ID)
 	writeJSON(w, 200, im)
 }
@@ -521,6 +525,8 @@ func (s *Server) handleMarkClean(w http.ResponseWriter, r *http.Request, u *User
 		fail(w, err)
 		return
 	}
+	pid, _ := s.projectOfSnapshot(r.Context(), im.SnapshotID)
+	s.audit(r, u, pid, "image.clean", "image", im.ICN, im.ICN+" als unbedenklich freigegeben (keine Körperteile)", nil)
 	im, _ = s.loadImage(r.Context(), im.ID)
 	writeJSON(w, 200, im)
 }

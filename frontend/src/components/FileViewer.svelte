@@ -40,9 +40,9 @@
 
 <style>
   .meta { margin-bottom: 10px; }
-  .code { font-family: var(--mono); font-size: 12.5px; background: #0f1722; color: #d6dee8; border-radius: 8px; max-height: 65vh; overflow: auto; padding: 8px 0; }
+  .code { font-family: var(--mono); font-size: 12.5px; background: var(--header); color: #e9e6de; border-radius: var(--r-1); max-height: 65vh; overflow: auto; padding: 8px 0; }
   .ln { display: flex; white-space: pre; }
   .ln.hl { background: rgba(255, 196, 0, .22); }
-  .no { width: 54px; flex: none; text-align: right; padding-right: 12px; color: #6b7a8c; user-select: none; }
+  .no { width: 54px; flex: none; text-align: right; padding-right: 12px; color: #8f949a; user-select: none; }
   .tx { padding-right: 16px; }
 </style>

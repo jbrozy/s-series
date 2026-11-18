@@ -1,5 +1,5 @@
 ---
-# S-Check (S1000D-Helper) auf Kubernetes – Namespace s1000-helper
+# S-Check (S1000D-Helper) auf Kubernetes, Namespace s1000-helper
 #
 #   ansible-galaxy collection install kubernetes.core community.docker
 #   pip install kubernetes

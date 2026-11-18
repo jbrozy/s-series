@@ -16,6 +16,7 @@ import (
 
 	"scheck/internal/analysis"
 	"scheck/internal/cache"
+	"scheck/internal/graph"
 	"scheck/internal/imaging"
 	"scheck/internal/rules"
 	"scheck/internal/s1000d"
@@ -146,7 +147,7 @@ func (s *Server) loadCorpus(ctx context.Context, sid string) (*analysis.Corpus, 
 			c.ICNs[s1000d.ICNKey(f.path)] = f.path
 			continue
 		}
-		if !s1000d.IsXML(f.path) {
+		if !s1000d.IsMarkup(f.path) {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(s.snapshotDir(sid), filepath.FromSlash(f.path)))
@@ -161,6 +162,7 @@ func (s *Server) loadCorpus(ctx context.Context, sid string) (*analysis.Corpus, 
 		}
 		c.Docs = append(c.Docs, d)
 	}
+	c.Docs = s1000d.MergeHTML(c.Docs)
 	return c, files, parseErrs, nil
 }
 
@@ -217,6 +219,9 @@ func (s *Server) writeIndex(ctx context.Context, sid string, c *analysis.Corpus,
 	}
 	upd.Close()
 	ins.Close()
+	if err := storeGraph(ctx, tx, sid, graph.Build(c, icnFileMap(files))); err != nil {
+		return fmt.Errorf("Wissensgraph: %w", err)
+	}
 	// image rows
 	for _, f := range files {
 		if f.kind != s1000d.KindICN {
@@ -227,7 +232,7 @@ func (s *Server) writeIndex(ctx context.Context, sid string, c *analysis.Corpus,
 		w, h := 0, 0
 		if !s1000d.IsRaster(f.path) {
 			status = "unsupported"
-			errMsg = "Vektorformat (" + strings.ToUpper(strings.TrimPrefix(filepath.Ext(f.path), ".")) + ") – bitte manuell oder als Rasterexport prüfen"
+			errMsg = "Vektorformat (" + strings.ToUpper(strings.TrimPrefix(filepath.Ext(f.path), ".")) + "). Bitte manuell oder als Rasterexport prüfen."
 		} else if iw, ih, err := imaging.Size(filepath.Join(s.snapshotDir(sid), filepath.FromSlash(f.path))); err == nil {
 			w, h = iw, ih
 		} else {
@@ -274,7 +279,7 @@ func (s *Server) doAnalyze(ctx context.Context, rid, sid, pid string, opts analy
 		return err
 	}
 	c.Dictionary = rules.Dictionary(rs)
-	s.progress(rid, 10, fmt.Sprintf("%d XML-Dateien geladen – semantische Prüfung läuft", len(c.Docs)))
+	s.progress(rid, 10, fmt.Sprintf("%d Dokumente geladen, semantische Prüfung läuft", len(c.Docs)))
 
 	findings := analysis.RunDeterministic(c, opts)
 	for id, msg := range parseErrs {
@@ -313,7 +318,7 @@ func (s *Server) doAnalyze(ctx context.Context, rid, sid, pid string, opts analy
 		} else if n > 0 {
 			notes = append(notes, fmt.Sprintf("Bildprüfung: %d Bilder analysiert", n))
 		} else if n == 0 {
-			notes = append(notes, "Bildprüfung: keine neuen Bilder – bereits geprüfte Bilder behalten ihren Status")
+			notes = append(notes, "Bildprüfung: keine neuen Bilder. Bereits geprüfte Bilder behalten ihren Status.")
 		}
 		findings = append(findings, s.imageFindings(ctx, sid)...)
 	}
@@ -428,15 +433,16 @@ func (s *Server) llmReview(ctx context.Context, rid, sid string, c *analysis.Cor
 
 // relatedContext returns short snippets of other modules similar to d.
 func (s *Server) relatedContext(ctx context.Context, sid string, d *s1000d.Doc, ms modelSettingsT, k int) []string {
+	// structurally related modules from the knowledge graph first
+	out := s.graphContext(ctx, sid, d.FileID, 3)
 	query := d.Title()
 	if query == "" {
-		return nil
+		return out
 	}
 	hits, err := s.search(ctx, sid, query, k+5, ms)
 	if err != nil {
-		return nil
+		return out
 	}
-	var out []string
 	for _, h := range hits {
 		if h.FileID == d.FileID {
 			continue

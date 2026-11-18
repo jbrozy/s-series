@@ -1,4 +1,42 @@
+# --- Umgebung und Geheimnisse
 .env
-frontend/node_modules
-frontend/dist
-backend/data
+.env.*
+!.env.example
+
+# --- Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# --- Backend (Go)
+backend/data/
+backend/server
+backend/scheck-ci
+backend/scheck-ci.exe
+backend/scheck-server
+*.exe
+*.test
+*.out
+coverage.*
+
+# --- Laufzeitdaten (Uploads, Redis, Logs)
+/data/
+*.rdb
+*.aof
+*.log
+
+# --- Ansible
+deploy/ansible/credentials/
+deploy/ansible/rendered/
+*.retry
+
+# --- Archive
+*.tar.gz
+
+# --- Editor und Betriebssystem
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

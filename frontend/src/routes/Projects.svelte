@@ -1,4 +1,5 @@
 <script>
+  import LoadError from '../components/LoadError.svelte';
   import { onMount } from 'svelte';
   import { api, fmt, labels } from '../lib/api.js';
   import { go, href } from '../lib/router.svelte.js';
@@ -11,6 +12,7 @@
   let description = $state('');
   let standard = $state('S1000D');
   let filter = $state('');
+  let loadError = $state(null);
 
   const filtered = $derived(
     (projects || []).filter((p) => !filter || (p.name + ' ' + p.description).toLowerCase().includes(filter.toLowerCase()))
@@ -18,7 +20,8 @@
 
   onMount(load);
   async function load() {
-    try { projects = await api.get('/projects'); } catch (e) { toastError(e); projects = []; }
+    loadError = null;
+    try { projects = await api.get('/projects'); } catch (e) { loadError = e; projects = null; }
   }
 
   async function create(e) {
@@ -41,44 +44,60 @@
     <button class="primary" onclick={() => (showNew = true)}>+ Neues Projekt</button>
   </div>
 
-  {#if projects === null}
-    <div class="empty">Lade …</div>
+  {#if loadError}
+    <LoadError what="Die Projekte" error={loadError} onretry={load} />
+  {:else if projects === null}
+    <div class="empty" role="status">Projekte werden geladen …</div>
   {:else if projects.length === 0}
     <div class="card empty-state">
       <h2>Noch keine Projekte</h2>
-      <p class="muted">Legen Sie ein Projekt an und laden Sie den Export Ihres CSDB-/Redaktionssystems hoch (ZIP, Ordner oder einzelne XML-Dateien und Grafiken).</p>
+      <p class="muted">Legen Sie ein Projekt an und laden Sie den Export Ihres CSDB-/Redaktionssystems hoch (ZIP, Ordner oder einzelne XML-Dateien und Grafiken). Ein HTML-Export geht ebenfalls.</p>
       <button class="primary" onclick={() => (showNew = true)}>Erstes Projekt anlegen</button>
     </div>
   {:else}
-    <div class="list">
+    <div class="register card">
+      <div class="reg-head label-quiet" aria-hidden="true">
+        <span>Projekt</span><span>Stand</span><span>Prüfstatus</span>
+      </div>
       {#each filtered as p (p.id)}
-        <a class="card proj" href={href(`/p/${p.id}`)}>
-          <div class="row">
-            <h2 class="grow ellipsis">{p.name}</h2>
-            <span class="badge outline">{p.standard}</span>
+        {@const state = p.snapshotCount === 0 ? 'none' : !p.latestRunStatus ? 'unchecked' : ['queued', 'running'].includes(p.latestRunStatus) ? 'running' : p.latestRunStatus === 'failed' ? 'failed' : p.openFindings > 0 ? 'open' : 'clean'}
+        <a class="proj state-{state}" href={href(`/p/${p.id}`)}>
+          <div class="who">
+            <div class="row name">
+              <h2 class="ellipsis">{p.name}</h2>
+              <span class="badge outline">{p.standard}</span>
+            </div>
+            <p class="desc">{p.description || 'Keine Beschreibung'}</p>
           </div>
-          <p class="desc muted">{p.description || 'Keine Beschreibung'}</p>
-          <div class="meta row wrap">
-            <span>{p.snapshotCount} {p.snapshotCount === 1 ? 'Upload' : 'Uploads'}</span>
-            <span>·</span>
-            <span>zuletzt {fmt.date(p.lastUpload)}</span>
-            <span class="spacer"></span>
-            {#if p.snapshotCount === 0}
-              <span class="badge outline">noch kein Upload</span>
-            {:else if !p.latestRunStatus}
+          <div class="when">
+            {#if p.snapshotCount}
+              <span>{p.snapshotCount} {p.snapshotCount === 1 ? 'Upload' : 'Uploads'}</span>
+              <span class="muted">zuletzt {fmt.date(p.lastUpload)}</span>
+            {:else}
+              <span class="muted">Kein Upload</span>
+            {/if}
+          </div>
+          <div class="status">
+            {#if state === 'none'}
+              <span class="badge outline">wartet auf ersten Upload</span>
+            {:else if state === 'unchecked'}
               <span class="badge warning" title="Neuester Upload: {p.latestLabel}">Neuester Upload nicht geprüft</span>
-            {:else if p.latestRunStatus === 'queued' || p.latestRunStatus === 'running'}
+            {:else if state === 'running'}
               <span class="badge info">Analyse läuft</span>
-            {:else if p.latestRunStatus === 'failed'}
+            {:else if state === 'failed'}
               <span class="badge error">Analyse fehlgeschlagen</span>
-            {:else if p.openFindings > 0}
+            {:else if state === 'open'}
               <span class="badge warning" title="Neuester Upload: {p.latestLabel}">{fmt.num(p.openFindings)} offene Befunde</span>
             {:else}
               <span class="badge ok">keine offenen Befunde</span>
             {/if}
-            <span class="badge">{labels.role[p.myRole] || p.myRole}</span>
+            {#if p.latestRelease === 'approved'}<span class="badge ok">freigegeben</span>
+            {:else if p.latestRelease === 'rejected'}<span class="badge error">abgelehnt</span>{/if}
+            <span class="role">{labels.role[p.myRole] || p.myRole}</span>
           </div>
         </a>
+      {:else}
+        <p class="empty">Kein Projekt passt zum Filter „{filter}“.</p>
       {/each}
     </div>
   {/if}
@@ -105,13 +124,39 @@
 {/if}
 
 <style>
-  .head { margin-bottom: 22px; align-items: flex-end; }
-  .search { max-width: 260px; }
-  .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; }
-  .proj { padding: 18px 20px; color: var(--ink); display: flex; flex-direction: column; gap: 8px; transition: border-color .12s, transform .12s; }
-  .proj:hover { text-decoration: none; border-color: var(--accent); }
-  .desc { min-height: 20px; }
-  .meta { font-size: 13px; color: var(--muted); gap: 8px; margin-top: 4px; }
-  .empty-state { padding: 48px; text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+  .head { margin-bottom: var(--s-5); align-items: flex-end; flex-wrap: wrap; row-gap: var(--s-3); }
+  .head p { margin-top: var(--s-1); }
+  .search { width: 260px; }
+
+  .register { overflow: hidden; }
+  .reg-head, .proj {
+    display: grid; grid-template-columns: minmax(0, 1fr) 190px 280px; gap: var(--s-5); align-items: center;
+    padding: var(--s-3) var(--s-5) var(--s-3) calc(var(--s-5) - 4px);
+  }
+  .reg-head { background: var(--surface-2); border-bottom: 1px solid var(--ink-2); padding-top: var(--s-2); padding-bottom: var(--s-2); border-left: 4px solid transparent; }
+  .proj { color: var(--ink); border-left: 4px solid var(--line-strong); border-top: 1px solid var(--line); }
+  .proj:first-of-type { border-top: none; }
+  .proj:hover { text-decoration: none; background: #fbf9f4; }
+  .proj:hover h2 { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+  .state-open, .state-unchecked { border-left-color: var(--warning); }
+  .state-failed { border-left-color: var(--error); }
+  .state-running { border-left-color: var(--info); }
+  .state-clean { border-left-color: var(--ok); }
+  .name { gap: var(--s-2); }
+  .name h2 { font-size: 19px; }
+  .desc { color: var(--muted); font-size: var(--t-sm); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .when { display: flex; flex-direction: column; font-size: var(--t-sm); }
+  .status { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+  .role { font-size: var(--t-sm); color: var(--muted); }
+
+  .empty-state { padding: var(--s-7) var(--s-5); text-align: center; display: flex; flex-direction: column; gap: var(--s-3); align-items: center; border-style: dashed; border-color: var(--line-strong); }
   .empty-state p { max-width: 520px; }
+
+  @media (max-width: 900px) {
+    .reg-head { display: none; }
+    .proj { grid-template-columns: minmax(0, 1fr); gap: var(--s-2); padding: var(--s-3) var(--s-4) var(--s-3) calc(var(--s-4) - 4px); }
+    .when { flex-direction: row; gap: var(--s-2); }
+    .search { width: 100%; }
+    .head .grow { flex-basis: 100%; }
+  }
 </style>

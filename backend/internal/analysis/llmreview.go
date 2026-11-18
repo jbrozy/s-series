@@ -25,7 +25,7 @@ Du prüfst Inhalte auf semantische und inhaltliche Fehler:
 - unlogische Reihenfolge von Arbeitsschritten
 - fehlende oder falsch platzierte Sicherheitshinweise (WARNUNG/VORSICHT) vor gefährlichen Tätigkeiten
 - uneinheitliche Terminologie und Verstöße gegen die angegebenen Projektregeln
-Syntaxfehler (XML-Schema) werden bereits anderweitig geprüft – melde sie nicht.
+Syntaxfehler (XML-Schema) werden bereits anderweitig geprüft, melde sie nicht.
 Antworte ausschließlich mit JSON in dieser Form:
 {"findings":[{"line":<Zeilennummer aus [Lnn]>,"code":"<KURZCODE>","severity":"error|warning|info","message":"<Beschreibung auf Deutsch>","suggestion":"<Korrekturvorschlag>"}]}
 Wenn nichts zu beanstanden ist, antworte mit {"findings":[]}. Melde nur echte, konkret belegbare Probleme.`

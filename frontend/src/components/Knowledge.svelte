@@ -2,8 +2,11 @@
   import { api } from '../lib/api.js';
   import { toastError } from '../lib/state.svelte.js';
   import FileViewer from './FileViewer.svelte';
+  // loaded on demand: keeps the graph library out of the main bundle
+  const graphModule = import('./KnowledgeGraph.svelte');
 
-  let { snapshot } = $props();
+  let { project, snapshot } = $props();
+  let view = $state('graph');
   let q = $state('');
   let hits = $state(null);
   let question = $state('');
@@ -28,9 +31,23 @@
   const modeLabel = { text: 'Volltext', semantic: 'Semantisch', hybrid: 'Hybrid' };
 </script>
 
+<div class="seg viewsel" role="group" aria-label="Ansicht der Wissensbasis">
+  <button aria-pressed={view === 'graph'} class:on={view === 'graph'} onclick={() => (view = 'graph')}>Wissensgraph</button>
+  <button aria-pressed={view === 'search'} class:on={view === 'search'} onclick={() => (view = 'search')}>Suche & Fragen</button>
+</div>
+
+{#if view === 'graph'}
+  {#await graphModule}
+    <div class="card empty">Graph wird geladen …</div>
+  {:then m}
+    <m.default {project} {snapshot} />
+  {:catch e}
+    <div class="error-box">Graph konnte nicht geladen werden: {e.message}</div>
+  {/await}
+{:else}
 <p class="hint intro">
-  Die XML-Datenmodule werden beim Upload in Abschnitte mit Strukturkontext (DMC › Titel › Unterabschnitt) zerlegt. So lassen sie sich durchsuchen
-  und als Wissensbasis für Fragen und den KI-Review nutzen – auch ohne Embedding-Modell (Volltext + Ähnlichkeitssuche).
+  Die Datenmodule (XML oder HTML-Export) werden beim Upload in Abschnitte mit Strukturkontext (DMC › Titel › Unterabschnitt) zerlegt. So lassen sie sich durchsuchen
+  und als Wissensbasis für Fragen und den KI-Review nutzen. Das klappt auch ohne Embedding-Modell (Volltext und Ähnlichkeitssuche).
 </p>
 
 <div class="layout">
@@ -76,19 +93,24 @@
   </section>
 </div>
 
+{/if}
+
 {#if viewer}
   <FileViewer snapshotId={snapshot.id} file={viewer.file} line={viewer.line} onclose={() => (viewer = null)} />
 {/if}
 
 <style>
+  .viewsel { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-1); overflow: hidden; margin-bottom: 14px; }
+  .viewsel button { border: none; border-radius: 0; }
+  .viewsel button.on { background: var(--accent); color: #fff; }
   .intro { margin-bottom: 14px; max-width: 900px; }
-  .layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; align-items: start; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
   .hits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
   .hits li { border-bottom: 1px solid var(--line); padding-bottom: 10px; }
   .txt { font-size: 13.5px; color: var(--ink-2); margin-top: 4px; }
   .link { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; text-align: left; }
   .link:hover { text-decoration: underline; background: none !important; }
-  .answer { white-space: pre-wrap; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .answer { white-space: pre-wrap; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-1); padding: 12px 14px; }
   .src { margin: 0; padding-left: 20px; font-size: 13px; }
-  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+  @media (max-width: 1000px) { .layout { grid-template-columns: minmax(0, 1fr); } }
 </style>

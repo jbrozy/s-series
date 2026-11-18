@@ -64,3 +64,18 @@ func ValidatePassword(pw string) error {
 	}
 	return nil
 }
+
+// TempPassword creates a readable one-time password like "Kx7m-Qp2r-Tz9w".
+func TempPassword() string {
+	const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+	b := make([]byte, 12)
+	_, _ = rand.Read(b)
+	out := make([]byte, 0, 14)
+	for i, v := range b {
+		if i > 0 && i%4 == 0 {
+			out = append(out, '-')
+		}
+		out = append(out, chars[int(v)%len(chars)])
+	}
+	return string(out)
+}

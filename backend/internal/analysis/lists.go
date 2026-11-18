@@ -32,7 +32,7 @@ func CheckLists(c *Corpus) []Finding {
 				out = append(out, checkListItems(d, n, childrenNamed(n, itemName), "Listeneintrag")...)
 				if cnt := len(childrenNamed(n, itemName)); cnt == 1 {
 					f := newFinding(d, n, CatLists, "LIST_SINGLE_ITEM", SevInfo,
-						"Liste mit nur einem Eintrag – Listen sollten mindestens zwei Einträge haben, sonst als Fließtext formulieren.")
+						"Liste mit nur einem Eintrag. Listen sollten mindestens zwei Einträge haben, sonst als Fließtext formulieren.")
 					out = append(out, f)
 				}
 			}

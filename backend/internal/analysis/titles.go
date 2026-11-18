@@ -345,7 +345,7 @@ func checkTitleVariants(c *Corpus, titles []titleOcc) []Finding {
 			sev = SevInfo
 		}
 		f := newFinding(t.doc, t.node, CatTitles, "TITLE_VARIANT", sev,
-			fmt.Sprintf("Mögliche Schreibvariante: %s ähnelt %s (%d× im Projekt) – %s.", q(t.text), q(display), lowerCount[better], reason[lk]))
+			fmt.Sprintf("Mögliche Schreibvariante: %s ähnelt %s (%d× im Projekt): %s.", q(t.text), q(display), lowerCount[better], reason[lk]))
 		f.Suggestion = display
 		out = append(out, f)
 	}

@@ -109,7 +109,7 @@ func CheckSpelling(c *Corpus) []Finding {
 		suggestion := matchCase(o.word, best)
 		if o.title {
 			f := newFinding(d, o.node, CatTitles, "TITLE_TYPO", SevWarning,
-				fmt.Sprintf("Möglicher Tippfehler im Titel: %s – im Projekt wird %s %d× verwendet.", q(o.word), q(suggestion), freq[best]))
+				fmt.Sprintf("Möglicher Tippfehler im Titel: %s. Im Projekt wird %s %d× verwendet.", q(o.word), q(suggestion), freq[best]))
 			f.Suggestion = suggestion
 			out = append(out, f)
 			continue
@@ -119,7 +119,7 @@ func CheckSpelling(c *Corpus) []Finding {
 		}
 		perDoc[di]++
 		f := newFinding(d, o.node, CatTitles, "TEXT_TYPO", SevInfo,
-			fmt.Sprintf("Möglicher Tippfehler: %s – im Projekt wird %s %d× verwendet.", q(o.word), q(suggestion), freq[best]))
+			fmt.Sprintf("Möglicher Tippfehler: %s. Im Projekt wird %s %d× verwendet.", q(o.word), q(suggestion), freq[best]))
 		f.Suggestion = suggestion
 		out = append(out, f)
 	}

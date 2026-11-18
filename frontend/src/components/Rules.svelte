@@ -1,4 +1,5 @@
 <script>
+  import LoadError from './LoadError.svelte';
   import { onMount } from 'svelte';
   import { api, labels } from '../lib/api.js';
   import { toast, toastError } from '../lib/state.svelte.js';
@@ -15,10 +16,12 @@
   const hasBrex = $derived((snapshot?.kinds?.brex || 0) > 0);
 
   onMount(load);
+  let loadError = $state(null);
   async function load() {
+    loadError = null;
     try {
       [rules, { templates }] = await Promise.all([api.get(`/projects/${project.id}/rules`), api.get('/rules/templates')]);
-    } catch (e) { toastError(e); rules = []; }
+    } catch (e) { loadError = e; }
   }
 
   const csv = (a) => (a || []).join(', ');
@@ -95,6 +98,40 @@
     try { await api.del(`/rules/${r.id}`); load(); } catch (e) { toastError(e); }
   }
 
+  // ---- take over rules from a file or another project
+  let transfer = $state(null); // { mode, projects, from, file, fileName, error, busy }
+  async function openTransfer() {
+    transfer = { mode: 'project', projects: null, from: '', file: null, fileName: '', error: '', busy: false };
+    try {
+      transfer.projects = (await api.get('/projects')).filter((p) => p.id !== project.id);
+    } catch (e) { transfer.projects = []; transfer.error = e.message; }
+  }
+  async function pickFile(e) {
+    const f = e.currentTarget.files?.[0];
+    transfer.error = '';
+    if (!f) return;
+    try {
+      transfer.file = JSON.parse(await f.text());
+      transfer.fileName = f.name;
+    } catch { transfer.file = null; transfer.error = `„${f.name}“ ist keine lesbare JSON-Datei.`; }
+  }
+  async function runTransfer(e) {
+    e.preventDefault();
+    const body = transfer.mode === 'project' ? { fromProject: transfer.from } : { file: transfer.file };
+    if (transfer.mode === 'project' && !transfer.from) { transfer.error = 'Bitte ein Quellprojekt wählen.'; return; }
+    if (transfer.mode === 'file' && !transfer.file) { transfer.error = transfer.error || 'Bitte eine exportierte Regeldatei wählen.'; return; }
+    transfer.busy = true;
+    try {
+      const r = await api.post(`/projects/${project.id}/rules/import`, body);
+      const parts = [`${r.imported} Regeln übernommen`];
+      if (r.skipped) parts.push(`${r.skipped} gab es schon`);
+      if (r.invalid?.length) parts.push(`${r.invalid.length} ungültig`);
+      toast(parts.join(', ') + '.');
+      transfer = null;
+      load();
+    } catch (err) { transfer.error = err.message; transfer.busy = false; }
+  }
+
   async function importBrex() {
     try {
       const res = await api.post(`/projects/${project.id}/rules/import-brex`, { snapshotId: snapshot.id });
@@ -116,11 +153,13 @@
 </script>
 
 <div class="row wrap bar">
-  <button class="chip {filter === 'all' ? 'active' : ''}" onclick={() => (filter = 'all')}>Alle</button>
-  <button class="chip {filter === 'manual' ? 'active' : ''}" onclick={() => (filter = 'manual')}>Eigene Regeln</button>
-  <button class="chip {filter === 'brex' ? 'active' : ''}" onclick={() => (filter = 'brex')}>Aus BREX</button>
+  <button class="chip {filter === 'all' ? 'active' : ''}" aria-pressed={filter === 'all'} onclick={() => (filter = 'all')}>Alle</button>
+  <button class="chip {filter === 'manual' ? 'active' : ''}" aria-pressed={filter === 'manual'} onclick={() => (filter = 'manual')}>Eigene Regeln</button>
+  <button class="chip {filter === 'brex' ? 'active' : ''}" aria-pressed={filter === 'brex'} onclick={() => (filter = 'brex')}>Aus BREX</button>
   <span class="spacer"></span>
+  <a class="btn" href={`/api/projects/${project.id}/rules/export`} title="Alle Regeln dieses Projekts als Datei, z. B. für andere Projekte oder zur Ablage">Regeln exportieren</a>
   {#if canEdit}
+    <button onclick={openTransfer}>Regeln übernehmen …</button>
     {#if hasBrex}<button onclick={importBrex} title="Strukturregeln aus dem BREX-Datenmodul des gewählten Uploads übernehmen">BREX importieren</button>{/if}
     <select class="newsel" aria-label="Neue Regel anlegen" onchange={(e) => { if (e.currentTarget.value) openNew(e.currentTarget.value); e.currentTarget.value = ''; }}>
       <option value="">+ Neue Regel …</option>
@@ -130,10 +169,12 @@
 </div>
 <p class="hint intro">Business Rules unterscheiden sich von Projekt zu Projekt. Sie gelten bei jeder Analyse dieses Projekts und fließen auch in den KI-Review und die Trainingsdaten ein.</p>
 
-{#if rules === null}
-  <div class="empty">Lade …</div>
+{#if loadError}
+  <LoadError what="Die Business Rules" error={loadError} onretry={load} />
+{:else if rules === null}
+  <div class="empty" role="status">Regeln werden geladen …</div>
 {:else if shown.length === 0}
-  <div class="card empty">Keine Regeln in dieser Ansicht.</div>
+  <div class="card empty">Keine Regeln in dieser Ansicht. Über „Neue Regel“ legen Sie eine an{hasBrex ? ' oder importieren sie aus dem BREX-Datenmodul' : ''}.</div>
 {:else}
   <div class="card">
     <table>
@@ -172,7 +213,7 @@
 
       {#if edit.type.startsWith('xpath')}
         <label><span class="lbl">XPath-Ausdruck</span><input class="mono" bind:value={edit.cfg.xpath} placeholder="//title//emphasis" /></label>
-        <label><span class="lbl">Kontext (optional)</span><input class="mono" bind:value={edit.cfg.context} placeholder="//proceduralStep – der Ausdruck wird je Kontextknoten geprüft" /></label>
+        <label><span class="lbl">Kontext (optional)</span><input class="mono" bind:value={edit.cfg.context} placeholder="//proceduralStep (Ausdruck wird je Kontextknoten geprüft)" /></label>
         {#if edit.type === 'xpath_values'}
           <div class="grid3">
             <label><span class="lbl">Erlaubte Werte (Komma)</span><input bind:value={edit.cfg._allowed} placeholder="01, 02" /></label>
@@ -247,7 +288,44 @@
   </Modal>
 {/if}
 
+{#if transfer}
+  <Modal title="Regeln übernehmen" onclose={() => (transfer = null)}>
+    <form class="stack" onsubmit={runTransfer} novalidate>
+      <p class="hint">Regeln mit gleichem Namen und Typ, die es hier schon gibt, werden übersprungen. Bestehende Regeln bleiben unverändert.</p>
+      <fieldset class="stack">
+        <legend class="lbl">Quelle</legend>
+        <label class="row check"><input type="radio" name="src" value="project" bind:group={transfer.mode} /> Aus einem anderen Projekt</label>
+        <label class="row check"><input type="radio" name="src" value="file" bind:group={transfer.mode} /> Aus einer exportierten Regeldatei (.json)</label>
+      </fieldset>
+      {#if transfer.mode === 'project'}
+        {#if transfer.projects === null}
+          <p class="muted" role="status">Projekte werden geladen …</p>
+        {:else if transfer.projects.length === 0}
+          <p class="muted">Sie haben keinen Zugriff auf weitere Projekte.</p>
+        {:else}
+          <label><span class="lbl">Quellprojekt</span>
+            <select bind:value={transfer.from}>
+              <option value="">Projekt wählen</option>
+              {#each transfer.projects as p}<option value={p.id}>{p.name}</option>{/each}
+            </select>
+          </label>
+        {/if}
+      {:else}
+        <label><span class="lbl">Regeldatei</span><input type="file" accept=".json,application/json" onchange={pickFile} /></label>
+        {#if transfer.file}<p class="hint">{transfer.fileName}: {transfer.file.rules?.length ?? 0} Regeln aus „{transfer.file.project || 'unbekannt'}“</p>{/if}
+      {/if}
+      {#if transfer.error}<p class="error-box" role="alert">{transfer.error}</p>{/if}
+      <div class="row"><span class="spacer"></span>
+        <button type="button" onclick={() => (transfer = null)}>Abbrechen</button>
+        <button class="primary" type="submit" disabled={transfer.busy}>{transfer.busy ? 'Übernimmt …' : 'Übernehmen'}</button>
+      </div>
+    </form>
+  </Modal>
+{/if}
+
 <style>
+  fieldset { border: none; margin: 0; padding: 0; min-width: 0; }
+  .check { gap: var(--s-2); }
   .bar { margin-bottom: 8px; }
   .intro { margin-bottom: 14px; }
   .newsel { width: auto; }

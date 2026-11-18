@@ -1,18 +1,19 @@
 <script>
+  import AuditLog from '../components/AuditLog.svelte';
   import { onMount } from 'svelte';
   import { api, fmt } from '../lib/api.js';
   import { session, toast, toastError } from '../lib/state.svelte.js';
   import { route, href } from '../lib/router.svelte.js';
+  import AdminUsers from '../components/AdminUsers.svelte';
 
   const tab = $derived(route.parts[1] || 'models');
   let settings = $state(null);
-  let users = $state([]);
   let status = $state(null);
   let tests = $state({});
 
   onMount(async () => {
     try {
-      [settings, users, status] = await Promise.all([api.get('/admin/settings/models'), api.get('/admin/users'), api.get('/admin/status')]);
+      [settings, status] = await Promise.all([api.get('/admin/settings/models'), api.get('/admin/status')]);
       settings.vision.labels ??= [];
     } catch (e) { toastError(e); }
   });
@@ -29,12 +30,6 @@
     try { tests[kind] = await api.post('/admin/settings/models/test', { kind, settings }); } catch (e) { tests[kind] = { ok: false, error: e.message }; }
   }
 
-  async function updateUser(u, patch) {
-    try {
-      const upd = await api.patch(`/admin/users/${u.id}`, patch);
-      Object.assign(u, upd);
-    } catch (e) { toastError(e); }
-  }
 
   const presets = {
     ollama: { baseUrl: 'http://ollama:11434/v1', hint: 'Ollama (OpenAI-kompatibel)' },
@@ -54,7 +49,7 @@
       <label class="span2"><span class="lbl">Basis-URL (OpenAI-kompatibel)</span><input class="mono" bind:value={ep.baseUrl} placeholder="http://ollama:11434/v1" /></label>
       <label><span class="lbl">Vorlage</span>
         <select onchange={(e) => { if (e.currentTarget.value) ep.baseUrl = presets[e.currentTarget.value].baseUrl; e.currentTarget.value = ''; }}>
-          <option value="">– wählen –</option>
+          <option value="">Vorlage wählen</option>
           {#each Object.entries(presets) as [k, p]}<option value={k}>{p.hint}</option>{/each}
         </select>
       </label>
@@ -79,15 +74,16 @@
 
 <div class="page">
   <h1>Administration</h1>
-  <nav class="tabs" style="margin-top:14px" aria-label="Administrationsbereiche">
+  <nav class="tabs admintabs" aria-label="Administrationsbereiche">
     <a href={href('/admin/models')} class:active={tab === 'models'}>Modelle</a>
     <a href={href('/admin/users')} class:active={tab === 'users'}>Benutzer</a>
     <a href={href('/admin/status')} class:active={tab === 'status'}>System</a>
+    <a href={href('/admin/audit')} class:active={tab === 'audit'}>Protokoll</a>
   </nav>
 
   {#if tab === 'models' && settings}
     <div class="stack">
-      <p class="muted">Alle Modell-Schnittstellen sind OpenAI-kompatibel und unabhängig konfigurierbar – lokal (Ollama, vLLM, LM Studio, llama.cpp) oder extern. Ohne Modelle laufen alle deterministischen Prüfungen trotzdem.</p>
+      <p class="muted">Alle Modell-Schnittstellen sind OpenAI-kompatibel und unabhängig konfigurierbar, lokal (Ollama, vLLM, LM Studio, llama.cpp) oder extern. Ohne Modelle laufen alle deterministischen Prüfungen trotzdem.</p>
       {@render endpointForm(settings.chat, 'chat', 'Chat-Modell (KI-Review & Fragen)', 'Prüft Datenmodule inhaltlich und beantwortet Fragen. Hier kann auch ein feingetuntes Modell eingetragen werden.', true)}
       {@render endpointForm(settings.embedding, 'embedding', 'Embedding-Modell (Wissensbasis)', 'Optional: semantische Suche und Kontext für den KI-Review, z. B. nomic-embed-text, bge-m3.', false)}
 
@@ -112,15 +108,15 @@
             <label><span class="lbl">API-Key</span><input type="password" bind:value={settings.vision.endpoint.apiKey} autocomplete="off" /></label>
             <label><span class="lbl">Koordinatenformat der Antwort</span>
               <select bind:value={settings.vision.coordFormat}>
-                <option value="norm1000">0–1000 normiert (Qwen3-VL, InternVL)</option>
+                <option value="norm1000">0 bis 1000 normiert (Qwen3-VL, InternVL)</option>
                 <option value="pixel">Pixel (Qwen2.5-VL)</option>
-                <option value="norm1">0–1 normiert</option>
-                <option value="gemini">0–1000, [ymin,xmin,ymax,xmax] (Gemini/PaliGemma)</option>
+                <option value="norm1">0 bis 1 normiert</option>
+                <option value="gemini">0 bis 1000, [ymin,xmin,ymax,xmax] (Gemini/PaliGemma)</option>
               </select>
             </label>
             <label><span class="lbl">Timeout (s)</span><input type="number" bind:value={settings.vision.endpoint.timeoutSec} /></label>
           </div>
-          <p class="hint">Grounding-fähige Vision-Modelle erkennen auch gezeichnete Hände in Strichzeichnungen – deutlich robuster als reine Posen-Modelle auf technischen Illustrationen.</p>
+          <p class="hint">Grounding-fähige Vision-Modelle erkennen auch gezeichnete Hände in Strichzeichnungen, deutlich robuster als reine Posen-Modelle auf technischen Illustrationen.</p>
         {:else if settings.vision.provider === 'http'}
           <div class="grid3">
             <label class="span2"><span class="lbl">Detektor-URL</span><input class="mono" bind:value={settings.vision.httpUrl} placeholder="http://detector:8000/detect" /></label>
@@ -138,28 +134,9 @@
       <div class="row savebar"><span class="spacer"></span><button class="primary" onclick={save}>Einstellungen speichern</button></div>
     </div>
   {:else if tab === 'users'}
-    <section class="card">
-      <table>
-        <thead><tr><th>Name</th><th>E-Mail</th><th>Rolle</th><th>Status</th><th>Letzte Anmeldung</th></tr></thead>
-        <tbody>
-          {#each users as u (u.id)}
-            <tr>
-              <td><strong>{u.name}</strong></td>
-              <td>{u.email}</td>
-              <td>
-                <select value={u.role} aria-label={`Rolle von ${u.name}`} disabled={u.id === session.user.id} onchange={(e) => updateUser(u, { role: e.currentTarget.value })} style="width:auto">
-                  <option value="user">Benutzer</option><option value="admin">Administrator</option>
-                </select>
-              </td>
-              <td>
-                <label class="row check"><input type="checkbox" aria-label={`${u.name} aktiv`} checked={!u.disabled} disabled={u.id === session.user.id} onchange={() => updateUser(u, { disabled: !u.disabled })} /> aktiv</label>
-              </td>
-              <td class="muted">{fmt.date(u.lastLoginAt)}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </section>
+    <AdminUsers />
+  {:else if tab === 'audit'}
+    <AuditLog admin />
   {:else if tab === 'status' && status}
     <div class="grid3">
       <div class="card card-pad"><span class="muted">Benutzer</span><h1>{status.users}</h1></div>
@@ -172,6 +149,7 @@
 </div>
 
 <style>
+  .admintabs { margin-top: var(--s-3); }
   .span2 { grid-column: span 2; }
   .check { gap: 6px; }
   .savebar { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0; }

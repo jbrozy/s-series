@@ -10,6 +10,8 @@
   import Knowledge from '../components/Knowledge.svelte';
   import Training from '../components/Training.svelte';
   import Members from '../components/Members.svelte';
+  import Release from '../components/Release.svelte';
+  import AuditLog from '../components/AuditLog.svelte';
 
   let { pid } = $props();
   let project = $state(null);
@@ -59,15 +61,17 @@
     go(`/p/${pid}/${tab}`, { snap: id });
   }
 
-  const tabs = [
+  const tabs = $derived([
     ['overview', 'Übersicht'],
     ['findings', 'Befunde'],
+    ['release', 'Freigabe'],
     ['images', 'Bilder'],
     ['rules', 'Business Rules'],
     ['knowledge', 'Wissensbasis'],
     ['training', 'Trainingsdaten'],
-    ['members', 'Mitglieder']
-  ];
+    ['members', 'Mitglieder'],
+    ...(canEdit ? [['audit', 'Protokoll']] : [])
+  ]);
 </script>
 
 <div class="page">
@@ -87,7 +91,7 @@
           <span class="lbl">Upload / Stand</span>
           <select value={sid} aria-label="Upload auswählen" onchange={(e) => selectSnapshot(e.currentTarget.value)}>
             {#each snapshots as s}
-              <option value={s.id}>{s.label} – {fmt.date(s.createdAt)}</option>
+              <option value={s.id}>{s.label}, {fmt.date(s.createdAt)}</option>
             {/each}
           </select>
         </label>
@@ -119,18 +123,24 @@
     {:else if tab === 'rules'}
       <Rules {project} {snapshot} {canEdit} />
     {:else if tab === 'knowledge'}
-      {#key snapshot.id}<Knowledge {snapshot} />{/key}
+      {#key snapshot.id}<Knowledge {project} {snapshot} />{/key}
     {:else if tab === 'training'}
       {#key snapshot.id}<Training {snapshot} {canEdit} />{/key}
     {:else if tab === 'members'}
       <Members {project} />
+    {:else if tab === 'release'}
+      {#key snapshot?.id}<Release {project} {snapshot} onchange={refreshSnapshots} />{/key}
+    {:else if tab === 'audit' && canEdit}
+      <AuditLog pid={project.id} />
     {/if}
   {/if}
 </div>
 
 <style>
-  .crumbs { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-  .head { align-items: flex-end; margin-bottom: 16px; }
-  .snapsel { min-width: 320px; }
-  .tabs .badge { margin-left: 6px; }
+  .crumbs { font-size: var(--t-sm); color: var(--muted); margin-bottom: var(--s-2); }
+  .head { align-items: flex-end; margin-bottom: var(--s-4); flex-wrap: wrap; row-gap: var(--s-3); }
+  .head h1 { overflow-wrap: anywhere; }
+  .snapsel { width: 340px; max-width: 100%; }
+  .tabs .badge { margin-left: var(--s-1); }
+  @media (max-width: 640px) { .snapsel { width: 100%; } }
 </style>

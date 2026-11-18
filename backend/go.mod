@@ -7,4 +7,5 @@ require (
 	github.com/gomodule/redigo v1.8.9
 	github.com/lib/pq v1.10.9
 	golang.org/x/image v0.15.0
+	golang.org/x/net v0.21.0
 )

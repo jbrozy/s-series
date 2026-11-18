@@ -41,7 +41,7 @@ func (s *Server) handleGetModels(w http.ResponseWriter, r *http.Request, _ *User
 	writeJSON(w, 200, s.modelSettings(r.Context()).MaskSecrets())
 }
 
-func (s *Server) handlePutModels(w http.ResponseWriter, r *http.Request, _ *User) {
+func (s *Server) handlePutModels(w http.ResponseWriter, r *http.Request, me *User) {
 	var in llm.Settings
 	if err := readJSON(r, &in); err != nil {
 		fail(w, err)
@@ -75,6 +75,7 @@ func (s *Server) handlePutModels(w http.ResponseWriter, r *http.Request, _ *User
 			rows.Close()
 		}
 	}
+	s.audit(r, me, "", "settings.models", "settings", "models", "Modell-Einstellungen geändert", map[string]any{"settings": in.MaskSecrets()})
 	writeJSON(w, 200, in.MaskSecrets())
 }
 
