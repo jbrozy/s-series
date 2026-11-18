@@ -1,0 +1,252 @@
+---
+# S-Check (S1000D-Helper) auf Kubernetes – Namespace s1000-helper
+#
+#   ansible-galaxy collection install kubernetes.core community.docker
+#   pip install kubernetes
+#
+#   ansible-playbook deploy.yml                          # Images bauen + pushen, ausrollen
+#   ansible-playbook deploy.yml --skip-tags build        # nur ausrollen
+#   ansible-playbook deploy.yml -e image_tag=1.0.1       # neue Version
+#   ansible-playbook deploy.yml --tags render            # nur Manifeste nach ./rendered schreiben
+#   ansible-playbook deploy.yml --tags teardown -e confirm_delete=s1000-helper   # alles inkl. Daten löschen
+#
+# Alle Einstellungen stehen unten unter "vars" und lassen sich mit -e überschreiben.
+# Passwörter kommen aus Umgebungsvariablen (S1000_POSTGRES_PASSWORD, S1000_REDIS_PASSWORD,
+# S1000_ADMIN_PASSWORD, S1000_CHAT_API_KEY, S1000_EMBED_API_KEY, S1000_VISION_API_KEY);
+# fehlen sie, werden Postgres-/Redis-Passwörter zufällig erzeugt und unter ./credentials gespeichert.
+
+- name: S1000D-Helper auf Kubernetes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    # ------------------------------------------------------------ Cluster
+    s1000_namespace: s1000-helper
+    kubeconfig: "{{ lookup('ansible.builtin.env', 'KUBECONFIG') | default('~/.kube/config', true) }}"
+    kube_context: ""                       # leer = aktueller Kontext
+
+    # ------------------------------------------------------------ Images
+    image_registry: registry.example.com/s1000-helper
+    image_tag: "1.0.0"
+    push_images: true
+    image_pull_policy: IfNotPresent
+    image_pull_secret: ""                  # vorhandenes Pull-Secret im Namespace (private Registry)
+    redis_image: redis:7-alpine
+    project_root: "{{ playbook_dir }}/../.."
+
+    # ------------------------------------------------------------ Speicher
+    storage_class: ""                      # leer = Standard-StorageClass
+    postgres_storage: 20Gi
+    redis_storage: 2Gi
+    data_storage: 50Gi                     # Uploads und anonymisierte Bilder
+
+    # ------------------------------------------------------------ Zugriff
+    ingress_enabled: true
+    ingress_host: s1000-helper.example.com
+    ingress_class: nginx
+    ingress_tls_secret: ""                 # z. B. s1000-helper-tls; leer = nur HTTP
+    ingress_annotations: {}
+    network_policies_enabled: true
+
+    # ------------------------------------------------------------ Anwendung
+    frontend_replicas: 2
+    backend_workers: 2
+    max_upload_mb: 2048
+    allow_signup: true
+    cookie_secure: "{{ ingress_tls_secret | length > 0 }}"
+    admin_email: ""
+    postgres_db: scheck
+    postgres_user: scheck
+
+    # ------------------------------------------------------------ Modelle (Startwerte, in der Oberfläche änderbar)
+    chat_base_url: ""                      # z. B. http://ollama.ki.svc.cluster.local:11434/v1
+    chat_model: ""
+    embed_base_url: ""
+    embed_model: ""
+    vision_provider: heuristic             # none | heuristic | openai | http
+    vision_base_url: ""
+    vision_model: ""
+    vision_coords: norm1000
+    detector_url: ""
+
+    # ------------------------------------------------------------ Ressourcen
+    backend_resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: "2", memory: 2Gi } }
+    frontend_resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { cpu: 500m, memory: 256Mi } }
+    postgres_resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: "2", memory: 2Gi } }
+    redis_resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
+    rollout_timeout: 600
+
+    # ------------------------------------------------------------ Geheimnisse
+    postgres_password: "{{ lookup('ansible.builtin.env', 'S1000_POSTGRES_PASSWORD') | default(lookup('ansible.builtin.password', playbook_dir + '/credentials/postgres_password length=32 chars=ascii_letters,digits'), true) }}"
+    redis_password: "{{ lookup('ansible.builtin.env', 'S1000_REDIS_PASSWORD') | default(lookup('ansible.builtin.password', playbook_dir + '/credentials/redis_password length=32 chars=ascii_letters,digits'), true) }}"
+    admin_password: "{{ lookup('ansible.builtin.env', 'S1000_ADMIN_PASSWORD') }}"
+    chat_api_key: "{{ lookup('ansible.builtin.env', 'S1000_CHAT_API_KEY') }}"
+    embed_api_key: "{{ lookup('ansible.builtin.env', 'S1000_EMBED_API_KEY') }}"
+    vision_api_key: "{{ lookup('ansible.builtin.env', 'S1000_VISION_API_KEY') }}"
+
+    # ------------------------------------------------------------ intern
+    k8s_auth: &k8s
+      kubeconfig: "{{ kubeconfig }}"
+      context: "{{ kube_context | default(omit, true) }}"
+    images:
+      - { name: s1000-helper-backend, path: "{{ project_root }}", dockerfile: backend/Dockerfile }
+      - { name: s1000-helper-frontend, path: "{{ project_root }}/frontend", dockerfile: Dockerfile }
+      - { name: s1000-helper-db, path: "{{ project_root }}/database", dockerfile: Dockerfile }
+    manifests: [namespace, secrets, configmap, postgres, redis, backend, frontend, ingress, networkpolicies]
+
+  tasks:
+    # ============================================================ Prüfen
+    - name: Konfiguration prüfen
+      ansible.builtin.assert:
+        that:
+          - "'example.com' not in image_registry"
+          - "not ingress_enabled or 'example.com' not in ingress_host"
+        fail_msg: "Bitte image_registry und ingress_host oben in deploy.yml setzen oder mit -e übergeben."
+      tags: [build, deploy]
+
+    - name: Verzeichnis für erzeugte Passwörter
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/credentials"
+        state: directory
+        mode: "0700"
+      tags: [build, deploy, render]
+
+    # ============================================================ Images
+    - name: Images bauen und pushen
+      community.docker.docker_image:
+        name: "{{ image_registry }}/{{ item.name }}"
+        tag: "{{ image_tag }}"
+        source: build
+        build:
+          path: "{{ item.path }}"
+          dockerfile: "{{ item.dockerfile }}"
+          pull: true
+        push: "{{ push_images }}"
+        force_source: true
+        force_tag: true
+      loop: "{{ images }}"
+      loop_control:
+        label: "{{ item.name }}:{{ image_tag }}"
+      tags: build
+
+    # ============================================================ Ausrollen
+    - name: Namespace {{ s1000_namespace }}
+      kubernetes.core.k8s:
+        <<: *k8s
+        state: present
+        template: namespace.yaml.j2
+      tags: deploy
+
+    - name: Secrets und Konfiguration
+      kubernetes.core.k8s:
+        <<: *k8s
+        state: present
+        apply: true
+        template: "{{ item }}"
+      loop: [secrets.yaml.j2, configmap.yaml.j2]
+      no_log: true
+      tags: deploy
+
+    - name: Datenbank (PostgreSQL)
+      kubernetes.core.k8s:
+        <<: *k8s
+        state: present
+        apply: true
+        template: postgres.yaml.j2
+        wait: true
+        wait_condition: { type: Ready, status: "True" }
+        wait_timeout: "{{ rollout_timeout }}"
+      tags: deploy
+
+    - name: Redis
+      kubernetes.core.k8s:
+        <<: *k8s
+        state: present
+        apply: true
+        template: redis.yaml.j2
+        wait: true
+        wait_timeout: "{{ rollout_timeout }}"
+      tags: deploy
+
+    - name: Backend und Frontend
+      kubernetes.core.k8s:
+        <<: *k8s
+        state: present
+        apply: true
+        template: "{{ item }}"
+        wait: true
+        wait_condition: { type: Available, status: "True" }
+        wait_timeout: "{{ rollout_timeout }}"
+      loop: [backend.yaml.j2, frontend.yaml.j2]
+      tags: deploy
+
+    - name: Ingress
+      kubernetes.core.k8s:
+        <<: *k8s
+        state: "{{ 'present' if ingress_enabled else 'absent' }}"
+        apply: "{{ ingress_enabled }}"
+        template: ingress.yaml.j2
+      tags: deploy
+
+    - name: NetworkPolicies
+      kubernetes.core.k8s:
+        <<: *k8s
+        state: "{{ 'present' if network_policies_enabled else 'absent' }}"
+        apply: "{{ network_policies_enabled }}"
+        template: networkpolicies.yaml.j2
+      tags: deploy
+
+    - name: Pods abfragen
+      kubernetes.core.k8s_info:
+        <<: *k8s
+        kind: Pod
+        namespace: "{{ s1000_namespace }}"
+        label_selectors: [app.kubernetes.io/part-of=s1000-helper]
+      register: pods
+      tags: deploy
+
+    - name: Ergebnis
+      ansible.builtin.debug:
+        msg:
+          - "Pods: {{ pods.resources | map(attribute='metadata.name') | zip(pods.resources | map(attribute='status.phase')) | map('join', ' = ') | list }}"
+          - "{{ ('Aufruf: http' ~ ('s' if ingress_tls_secret else '') ~ '://' ~ ingress_host) if ingress_enabled else 'Ohne Ingress: kubectl -n ' ~ s1000_namespace ~ ' port-forward svc/frontend 8080:80, dann http://localhost:8080' }}"
+          - "Der erste registrierte Benutzer wird Administrator."
+      tags: deploy
+
+    # ============================================================ Nur rendern (--tags render)
+    - name: Verzeichnis ./rendered
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/rendered"
+        state: directory
+        mode: "0700"
+      tags: [never, render]
+
+    - name: Manifeste nach ./rendered schreiben
+      ansible.builtin.template:
+        src: "templates/{{ item }}.yaml.j2"
+        dest: "{{ playbook_dir }}/rendered/{{ '%02d' | format(idx) }}-{{ item }}.yaml"
+        mode: "0600"
+      loop: "{{ manifests }}"
+      loop_control: { index_var: idx }
+      tags: [never, render]
+
+    # ============================================================ Entfernen (--tags teardown)
+    - name: Löschen bestätigen
+      ansible.builtin.assert:
+        that: confirm_delete | default('') == s1000_namespace
+        fail_msg: >-
+          Löscht den Namespace {{ s1000_namespace }} mit Datenbank und allen Uploads.
+          Zum Bestätigen: -e confirm_delete={{ s1000_namespace }}
+      tags: [never, teardown]
+
+    - name: Namespace {{ s1000_namespace }} löschen
+      kubernetes.core.k8s:
+        <<: *k8s
+        api_version: v1
+        kind: Namespace
+        name: "{{ s1000_namespace }}"
+        state: absent
+        wait: true
+        wait_timeout: "{{ rollout_timeout }}"
+      tags: [never, teardown]

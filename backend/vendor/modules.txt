@@ -1,0 +1,17 @@
+# github.com/antchfx/xpath v1.1.2
+## explicit
+github.com/antchfx/xpath
+# github.com/gomodule/redigo v1.8.9
+## explicit; go 1.16
+github.com/gomodule/redigo/redis
+# github.com/lib/pq v1.10.9
+## explicit; go 1.13
+github.com/lib/pq
+github.com/lib/pq/oid
+github.com/lib/pq/scram
+# golang.org/x/image v0.15.0
+## explicit; go 1.18
+golang.org/x/image/bmp
+golang.org/x/image/ccitt
+golang.org/x/image/tiff
+golang.org/x/image/tiff/lzw

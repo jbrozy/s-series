@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: {{ s1000_namespace }}
+  labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/part-of: s1000-helper }
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: postgres }
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: {{ s1000_namespace }}
+  labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/part-of: s1000-helper }
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: postgres }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/part-of: s1000-helper }
+    spec:
+      securityContext:
+        fsGroup: 70
+{% if image_pull_secret %}
+      imagePullSecrets:
+        - name: {{ image_pull_secret }}
+{% endif %}
+      containers:
+        - name: postgres
+          image: {{ image_registry }}/s1000-helper-db:{{ image_tag }}
+          imagePullPolicy: {{ image_pull_policy }}
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef: { name: s1000-helper-secrets }
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec: { command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""] }
+            periodSeconds: 5
+          livenessProbe:
+            exec: { command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""] }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources: {{ postgres_resources | to_json }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+{% if storage_class %}
+        storageClassName: {{ storage_class }}
+{% endif %}
+        resources:
+          requests:
+            storage: {{ postgres_storage }}

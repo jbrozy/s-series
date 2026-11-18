@@ -1,0 +1,92 @@
+name: s-check
+
+services:
+  db:
+    build: ./database
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-scheck}
+      POSTGRES_USER: ${POSTGRES_USER:-scheck}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scheck}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-scheck}"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-scheck}
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-scheck}:${POSTGRES_PASSWORD:-scheck}@db:5432/${POSTGRES_DB:-scheck}?sslmode=disable
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-scheck}
+      SCHECK_ALLOW_SIGNUP: ${SCHECK_ALLOW_SIGNUP:-true}
+      SCHECK_ADMIN_EMAIL: ${SCHECK_ADMIN_EMAIL:-}
+      SCHECK_ADMIN_PASSWORD: ${SCHECK_ADMIN_PASSWORD:-}
+      SCHECK_COOKIE_SECURE: ${SCHECK_COOKIE_SECURE:-false}
+      SCHECK_WORKERS: ${SCHECK_WORKERS:-2}
+      SCHECK_MAX_UPLOAD_MB: ${SCHECK_MAX_UPLOAD_MB:-2048}
+      SCHECK_CHAT_BASE_URL: ${SCHECK_CHAT_BASE_URL:-}
+      SCHECK_CHAT_MODEL: ${SCHECK_CHAT_MODEL:-}
+      SCHECK_CHAT_API_KEY: ${SCHECK_CHAT_API_KEY:-}
+      SCHECK_EMBED_BASE_URL: ${SCHECK_EMBED_BASE_URL:-}
+      SCHECK_EMBED_MODEL: ${SCHECK_EMBED_MODEL:-}
+      SCHECK_EMBED_API_KEY: ${SCHECK_EMBED_API_KEY:-}
+      SCHECK_VISION_PROVIDER: ${SCHECK_VISION_PROVIDER:-heuristic}
+      SCHECK_VISION_BASE_URL: ${SCHECK_VISION_BASE_URL:-}
+      SCHECK_VISION_MODEL: ${SCHECK_VISION_MODEL:-}
+      SCHECK_VISION_API_KEY: ${SCHECK_VISION_API_KEY:-}
+      SCHECK_VISION_COORDS: ${SCHECK_VISION_COORDS:-norm1000}
+      SCHECK_DETECTOR_URL: ${SCHECK_DETECTOR_URL:-}
+    volumes:
+      - appdata:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${SCHECK_PORT:-8080}:80"
+
+  # Optional: lokale Modelle ohne Internet – starten mit
+  #   docker compose --profile ollama up -d
+  # und in Administration → Modelle die URL http://ollama:11434/v1 eintragen.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  pgdata:
+  redisdata:
+  appdata:
+  ollama:

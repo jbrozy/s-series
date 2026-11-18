@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s1000-helper-config
+  namespace: {{ s1000_namespace }}
+  labels:
+    app.kubernetes.io/part-of: s1000-helper
+data:
+  REDIS_ADDR: "redis:6379"
+  SCHECK_WORKERS: {{ backend_workers | string | to_json }}
+  SCHECK_MAX_UPLOAD_MB: {{ max_upload_mb | string | to_json }}
+  SCHECK_ALLOW_SIGNUP: {{ allow_signup | bool | string | lower | to_json }}
+  SCHECK_COOKIE_SECURE: {{ cookie_secure | bool | string | lower | to_json }}
+  SCHECK_ADMIN_EMAIL: {{ admin_email | to_json }}
+  SCHECK_CHAT_BASE_URL: {{ chat_base_url | to_json }}
+  SCHECK_CHAT_MODEL: {{ chat_model | to_json }}
+  SCHECK_EMBED_BASE_URL: {{ embed_base_url | to_json }}
+  SCHECK_EMBED_MODEL: {{ embed_model | to_json }}
+  SCHECK_VISION_PROVIDER: {{ vision_provider | to_json }}
+  SCHECK_VISION_BASE_URL: {{ vision_base_url | to_json }}
+  SCHECK_VISION_MODEL: {{ vision_model | to_json }}
+  SCHECK_VISION_COORDS: {{ vision_coords | to_json }}
+  SCHECK_DETECTOR_URL: {{ detector_url | to_json }}
+  TZ: "Europe/Berlin"

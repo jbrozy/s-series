@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: {{ s1000_namespace }}
+  labels: { app.kubernetes.io/name: frontend, app.kubernetes.io/part-of: s1000-helper }
+spec:
+  replicas: {{ frontend_replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: frontend }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: frontend, app.kubernetes.io/part-of: s1000-helper }
+    spec:
+{% if image_pull_secret %}
+      imagePullSecrets:
+        - name: {{ image_pull_secret }}
+{% endif %}
+      containers:
+        - name: frontend
+          image: {{ image_registry }}/s1000-helper-frontend:{{ image_tag }}
+          imagePullPolicy: {{ image_pull_policy }}
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 20
+          resources: {{ frontend_resources | to_json }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: {{ s1000_namespace }}
+  labels: { app.kubernetes.io/name: frontend, app.kubernetes.io/part-of: s1000-helper }
+spec:
+  selector: { app.kubernetes.io/name: frontend }
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

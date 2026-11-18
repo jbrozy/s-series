@@ -1,0 +1,34 @@
+{% set annotations = {} %}
+{% if ingress_class == 'nginx' %}
+{% set _ = annotations.update({
+  'nginx.ingress.kubernetes.io/proxy-body-size': (max_upload_mb | int * 2) ~ 'm',
+  'nginx.ingress.kubernetes.io/proxy-read-timeout': '900',
+  'nginx.ingress.kubernetes.io/proxy-send-timeout': '900',
+  'nginx.ingress.kubernetes.io/proxy-request-buffering': 'off'
+}) %}
+{% endif %}
+{% set _ = annotations.update(ingress_annotations) %}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: s1000-helper
+  namespace: {{ s1000_namespace }}
+  labels: { app.kubernetes.io/part-of: s1000-helper }
+  annotations: {{ annotations | to_json }}
+spec:
+  ingressClassName: {{ ingress_class }}
+{% if ingress_tls_secret %}
+  tls:
+    - hosts: [{{ ingress_host | to_json }}]
+      secretName: {{ ingress_tls_secret }}
+{% endif %}
+  rules:
+    - host: {{ ingress_host | to_json }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port: { number: 80 }
