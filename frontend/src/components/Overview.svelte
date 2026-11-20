@@ -1,12 +1,15 @@
 <script>
+  import SortTh from './SortTh.svelte';
+  import { createSorter } from '../lib/sort.svelte.js';
   import LoadError from './LoadError.svelte';
   import { api, upload, fmt, labels } from '../lib/api.js';
-  import { go, href } from '../lib/router.svelte.js';
+  import { go, href, route } from '../lib/router.svelte.js';
   import { toast, toastError } from '../lib/state.svelte.js';
   import Modal from './Modal.svelte';
   import FileViewer from './FileViewer.svelte';
 
   let { project, snapshots, snapshot, canEdit, onchange } = $props();
+  const fileSorter = createSorter('dmc', { kind: (f) => f.kind, dmc: (f) => f.dmc || f.path, title: (f) => f.title, lang: (f) => f.lang, findings: (f) => f.findings || 0 }, 'asc', 'scheck.sort.files');
 
   // ---- upload
   let files = $state([]);
@@ -133,7 +136,12 @@
     if (!id || st !== 'ready') { dmFiles = null; return; }
     void filesReload;
     filesError = null;
-    api.get(`/snapshots/${id}/files`).then((f) => (dmFiles = f)).catch((e) => { filesError = e; dmFiles = null; });
+    api.get(`/snapshots/${id}/files`).then((f) => {
+      dmFiles = f;
+      // opened from the search: show the requested file right away
+      const want = route.query.view;
+      if (want) { const hit = f.find((x) => x.id === want); if (hit) viewFile = hit; }
+    }).catch((e) => { filesError = e; dmFiles = null; });
     void run;
   });
   const shownFiles = $derived(
@@ -152,10 +160,10 @@
 <div class="layout">
   <div class="main stack">
     {#if snapshot}
-      <section class="ruled stack summary">
-        <div class="row wrap">
+      <section class="card summary" aria-labelledby="h-snap">
+        <div class="panel-head">
           <div class="grow">
-            <h2>{snapshot.label}</h2>
+            <h2 id="h-snap">Upload „{snapshot.label}“</h2>
             <p class="muted meta">Hochgeladen {fmt.date(snapshot.createdAt)} von {snapshot.uploadedBy} · {fmt.num(snapshot.fileCount)} Dateien · {fmt.bytes(snapshot.totalBytes)}</p>
           </div>
           {#if run?.status === 'done'}
@@ -166,6 +174,7 @@
             <span class="badge {snapshot.status === 'failed' ? 'error' : 'info'}">{run && snapshot.status === 'ready' ? 'Analyse läuft' : statusText[snapshot.status] || snapshot.status}</span>
           {/if}
         </div>
+        <div class="card-pad stack">
         {#if snapshot.error}<div class="error-box">{snapshot.error}</div>{/if}
 
         <div class="plate">
@@ -230,21 +239,22 @@
           <span class="spacer"></span>
           {#if canEdit}<button class="danger" onclick={() => deleteSnapshot(snapshot)}>Upload löschen</button>{/if}
         </div>
+        </div>
       </section>
 
       {#if filesError}
         <LoadError what="Die Dateien des Uploads" error={filesError} onretry={() => filesReload++} />
       {:else if dmFiles}
         <section class="card">
-          <div class="row wrap card-pad sect-head">
-            <h3 class="grow">Dateien im Upload</h3>
+          <div class="panel-head">
+            <h2 class="grow">Dateien im Upload</h2>
             <input class="filter" aria-label="Dateien filtern" placeholder="DMC, Titel, Datei …" bind:value={dmFilter} />
           </div>
           <div class="tablewrap">
             <table>
-              <thead><tr><th>Typ</th><th>DMC / Datei</th><th>Titel</th><th>Sprache</th><th class="right">Befunde</th></tr></thead>
+              <thead><tr><SortTh sorter={fileSorter} key="kind">Typ</SortTh><SortTh sorter={fileSorter} key="dmc">DMC / Datei</SortTh><SortTh sorter={fileSorter} key="title">Titel</SortTh><SortTh sorter={fileSorter} key="lang">Sprache</SortTh><SortTh sorter={fileSorter} key="findings" align="right">Befunde</SortTh></tr></thead>
               <tbody>
-                {#each shownFiles.slice(0, 400) as f (f.id)}
+                {#each fileSorter.apply(shownFiles).slice(0, 400) as f (f.id)}
                   <tr>
                     <td><span class="badge outline">{labels.kind[f.kind] || f.kind}</span></td>
                     <td>
@@ -280,8 +290,9 @@
 
   <aside class="stack">
     {#if canEdit}
-      <section class="ruled stack">
-        <h3>Projektexport hochladen</h3>
+      <section class="card" aria-labelledby="h-up">
+        <div class="panel-head"><h2 id="h-up">Neuen Export hochladen</h2></div>
+        <div class="card-pad stack">
         <div
           class="drop" class:over={dragOver} role="button" tabindex="0"
           ondragover={(e) => { e.preventDefault(); dragOver = true; }}
@@ -310,18 +321,23 @@
           {#if uploading}
             <div class="progress"><div style="width:{progress * 100}%"></div></div>
           {/if}
-          <button class="primary" onclick={doUpload} disabled={uploading}>{uploading ? `Lade hoch … ${Math.round(progress * 100)} %` : 'Hochladen & prüfen'}</button>
+          <button class="primary" onclick={doUpload} disabled={uploading}>{uploading ? `Lade hoch … ${Math.round(progress * 100)} %` : 'Hochladen und prüfen'}</button>
         {/if}
+        </div>
       </section>
     {/if}
 
     {#if snapshots.length > 1}
-      <section class="ruled stack">
-        <h3>Frühere Uploads</h3>
+      <section class="card" aria-labelledby="h-hist">
+        <div class="panel-head"><h2 id="h-hist">Alle Uploads</h2></div>
         <ul class="history">
           {#each snapshots as s}
-            <li class:current={s.id === snapshot?.id}>
-              <a href={href(`/p/${project.id}/overview`, { snap: s.id })}>{s.label}</a>
+            <li>
+              {#if s.id === snapshot?.id}
+                <span class="cur" aria-current="true">{s.label}</span><span class="badge accent">angezeigt</span>
+              {:else}
+                <a href={href(`/p/${project.id}/overview`, { snap: s.id })}>{s.label}</a>
+              {/if}
               <span class="hint">{fmt.date(s.createdAt)}</span>
             </li>
           {/each}
@@ -356,32 +372,26 @@
 {/if}
 
 <style>
-  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s-6); align-items: start; }
-  .main { gap: var(--s-6); }
-  aside { gap: var(--s-6); }
-  .summary h2 { font-size: 24px; margin-top: 2px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s-4); align-items: start; }
+  .main, aside { gap: var(--s-4); }
+  .summary h2 { font-size: var(--t-lg); }
   .meta { font-size: var(--t-sm); }
 
-  /* type plate: one strip, cells divided by rules */
-  .plate { display: flex; flex-wrap: wrap; border: 1px solid var(--ink-2); border-radius: var(--r-1); background: var(--surface); }
-  .group { display: flex; flex: 1 1 300px; margin: 0; }
-  .group + .group { border-left: 1px solid var(--ink-2); }
-  .cell { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: var(--s-2) var(--s-3) var(--s-3); min-width: 0; }
-  .cell + .cell { border-left: 1px solid var(--line); }
-  .cell dt, .cell .k { font-family: var(--font-head); font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
-  .cell dd, .cell .v { margin: 0; font-family: var(--font-head); font-size: 30px; font-weight: 600; line-height: 1.1; color: var(--ink); }
-  .sev .cell { border-top: 4px solid transparent; color: var(--ink); }
-  .sev .cell:hover { background: var(--surface-2); text-decoration: none; }
-  .sev .cell:hover .k { text-decoration: underline; }
-  .sev .err { border-top-color: var(--error); } .sev .err .v { color: var(--error); }
-  .sev .warn { border-top-color: var(--warning); } .sev .warn .v { color: var(--warning); }
-  .sev .inf { border-top-color: var(--info); } .sev .inf .v { color: var(--info); }
+  /* key figures: label above value, status by text label */
+  .plate { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r-1); overflow: hidden; }
+  .group { display: contents; margin: 0; }
+  .cell { display: flex; flex-direction: column; gap: 2px; padding: var(--s-2) var(--s-3); background: var(--surface); min-width: 0; color: var(--ink); text-decoration: none; }
+  .cell dt, .cell .k { font-size: var(--t-sm); color: var(--muted); }
+  .cell dd, .cell .v { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.2; }
+  a.cell:hover { background: var(--surface-hover); }
+  a.cell:hover .k { text-decoration: underline; color: var(--accent); }
+  .sev .err .v { color: var(--error); } .sev .warn .v { color: var(--warning); } .sev .inf .v { color: var(--info); }
 
-  .runbox { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: var(--s-3) 0; display: flex; flex-direction: column; gap: var(--s-2); }
+  .runbox { border: 1px solid var(--line); border-radius: var(--r-1); background: var(--surface-2); padding: var(--s-3); display: flex; flex-direction: column; gap: var(--s-2); }
   .runbox .muted { font-size: var(--t-sm); }
   .releaseline { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-2) var(--s-3); padding: var(--s-2) var(--s-3);
     border: 1px solid var(--line-strong); border-radius: var(--r-1); background: var(--surface); }
-  .releaseline strong { font-family: var(--font-head); font-size: var(--t-lg); }
+  .releaseline strong { font-size: var(--t-md); }
   .releaseline span:not(.spacer) { color: var(--ink-2); font-size: var(--t-sm); }
   .releaseline a { font-size: var(--t-sm); text-decoration: underline; text-underline-offset: 2px; }
   .r-approved { border-color: var(--ok); background: var(--ok-soft); }
@@ -389,7 +399,7 @@
   .notes { margin: 0; padding-left: var(--s-4); color: var(--ink-2); font-size: var(--t-sm); overflow-wrap: anywhere; }
 
   .drop {
-    border: 1px dashed var(--ink-2); border-radius: var(--r-1); padding: var(--s-5) var(--s-4); text-align: center;
+    border: 2px dashed var(--line-strong); border-radius: var(--r-1); padding: var(--s-5) var(--s-4); text-align: center;
     display: flex; flex-direction: column; gap: var(--s-2); cursor: pointer; background: var(--surface);
   }
   .drop.over, .drop:hover { border-color: var(--accent); border-style: solid; background: var(--accent-soft); }
@@ -397,23 +407,21 @@
   .check { gap: var(--s-2); }
   .opt { display: flex; gap: var(--s-3); align-items: flex-start; }
   .opt input { margin-top: 3px; }
-  .sect-head { padding-bottom: var(--s-3); }
   .filter { width: 280px; max-width: 100%; }
   .tablewrap { max-height: 560px; overflow: auto; border-top: 1px solid var(--line); }
   .link { border: none; background: none; padding: 0; min-height: 0; color: var(--accent); cursor: pointer; text-align: left; white-space: normal; font-weight: 400; }
   .link:hover { text-decoration: underline; background: none !important; }
   .err { color: var(--error); }
   .history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .history li { display: flex; flex-direction: column; padding: var(--s-2) var(--s-3); border-left: 3px solid transparent; border-bottom: 1px solid var(--line); }
-  .history li.current { border-left-color: var(--accent); background: var(--surface); }
-  .history li.current a { font-weight: 600; color: var(--ink); }
-  .history .hint { font-size: var(--t-xs); }
+  .history li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--s-2); padding: var(--s-2) var(--s-5); border-bottom: 1px solid var(--line); }
+  .history li:last-child { border-bottom: none; }
+  .history .cur { font-weight: 600; }
+  .history .hint { flex-basis: 100%; font-size: var(--t-xs); }
   .empty-state { padding: var(--s-7) var(--s-5); text-align: center; display: flex; flex-direction: column; gap: var(--s-3); border-style: dashed; border-color: var(--line-strong); }
   @media (max-width: 1100px) { .layout { grid-template-columns: minmax(0, 1fr); } }
-  .sect-head .grow { min-width: 180px; }
   .runbox .muted { white-space: nowrap; }
   @media (max-width: 640px) {
-    .tablewrap th:nth-child(1), .tablewrap td:nth-child(1), .tablewrap th:nth-child(4), .tablewrap td:nth-child(4) { display: none; }
+    .tablewrap :global(th:nth-child(1)), .tablewrap td:nth-child(1), .tablewrap :global(th:nth-child(4)), .tablewrap td:nth-child(4) { display: none; }
     .group { flex-basis: 100%; }
     .group + .group { border-left: none; border-top: 1px solid var(--ink-2); }
     .cell dd, .cell .v { font-size: 22px; }

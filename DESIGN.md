@@ -1,45 +1,93 @@
-# S-Check: Gestaltungsrichtung
+# S-Check Styleguide
 
-Grundlage: der Einsatzzweck (Technische Redakteure prüfen S1000D-/S-Series-Exporte vor der Auslieferung) und die UI-Regeln des Projekteigners (keine KI-Klischees, bewusste Typografie, domänenspezifische Palette, Tokens vor Komponenten, Prüfung per Playwright auf Desktop und Mobil).
+Grundlage: DIN EN ISO 9241-110:2020 (Interaktionsprinzipien), -112:2017 (Grundsätze der Informationsdarstellung), -125:2017 (visuelle Informationsdarstellung), -143:2012 (Formulardialoge), WCAG 2.2 Stufe AA (über EN 301 549 / BITV 2.0) und Arbeitsstättenverordnung Anhang 6.5 (Software an Kenntnisse der Beschäftigten anpassbar, Angaben zu Dialogabläufen).
 
-**Design Read:** interne Fachanwendung für Technische Redakteure, die Exporte auf inhaltliche Fehler prüfen, in der Bildsprache eines technischen Handbuchs und Prüfprotokolls. Dial: ENERGY 1 / RHYTHM 2 / MOTION 1.
+S-Check ist ein Arbeitswerkzeug für Technische Redakteure. Die Oberfläche soll aussehen und sich verhalten wie eine sorgfältige Fachanwendung: ruhig, vorhersehbar, dicht genug für lange Listen. Auffallen sollen nur der Inhalt und Zustände, die eine Handlung verlangen.
 
-- ENERGY 1: Arbeitswerkzeug, das stundenlang offen ist. Der Inhalt (Befunde, DMCs, Bilder) ist laut, die Oberfläche leise.
-- RHYTHM 2: gleichmäßiges Raster, aber jede Seite bricht einmal bewusst aus (Kennzahlen-Leiste in der Übersicht, Register bei den Projekten, Protokollblatt bei den Befunden).
-- MOTION 1: nur Hover-, Fokus- und Fortschrittszustände. Keine Einblend-Animationen.
+**Design Read:** Fachanwendung (Prüfwerkzeug) für Technische Redakteure und QS, klassischer Aufbau mit Seitenleiste. Dial: ENERGY 1 / RHYTHM 1 / MOTION 1. Einheitlichkeit ist hier Absicht (ISO 9241-110, Erwartungskonformität), nicht Zufall.
 
-## Identitätsmotiv
+**Identitätsmotiv:** Der Seitenkopf ist auf jeder Seite gleich aufgebaut: Pfad, Titel, Statuszeile, Aktionen rechts. Wer eine Seite kennt, findet sich auf allen zurecht.
 
-Zwei Elemente aus gedruckten technischen Handbüchern, überall gleich eingesetzt:
+## 1 Interaktionsprinzipien (ISO 9241-110) und ihre Umsetzung
 
-1. **Kapitellinie:** eine 3 px starke Linie in Tinte über jedem Seitenabschnitt (`.ruled`). Abschnitte werden durch Linien gegliedert, nicht durch Kästen.
-2. **Änderungsbalken:** In S1000D-Ausgaben markiert ein senkrechter Balken am Rand geänderte Stellen. S-Check nutzt denselben Balken am linken Rand für Zeilen, die Aufmerksamkeit brauchen (Befund nach Schweregrad, Projekt nach Prüfstatus, aktueller Upload). Er steht nur, wo er einen Zustand trägt, und immer zusätzlich zu einem Textlabel.
-
-## Entscheidungen und Gründe
-
-| Entscheidung | Grund |
+| Prinzip | Umsetzung in S-Check |
 |---|---|
-| Hintergrund Papier `#f4f2ec`, Blätter `#fffefb` | Der Gegenstand ist Dokumentation, die gedruckt oder als IETP auf hellem Grund gelesen wird. Bilder und Anonymisierungen werden auf demselben hellen Grund beurteilt. |
-| Nur helles Thema | Farbtreue beim Prüfen von Grafiken (Hautton-Erkennung, Silhouetten) braucht einen neutralen, hellen Grund wie im Zielmedium. Ein dunkles Thema würde die Beurteilung verfälschen. |
-| Tinte `#15181c`, Grafit-Kopfzeile | Höchster Kontrast für lange Arbeitssitzungen (15,9:1 auf Papier). |
-| Akzent Tintenblau `#0f4a75` | Eine Akzentfarbe für Primäraktion, Links und aktiven Reiter. Blau wie Korrekturtinte, nicht wie Neon. 9,2:1 auf Blatt. |
-| Signalorange `#c25400` nur für Fokusring und aktive Hauptnavigation | Muss auf hellen und dunklen Flächen sichtbar sein (4,1:1 bzw. 3,9:1, über 3:1 für Nicht-Text). |
-| Schweregrade Rot/Bernstein/Schiefer | Entsprechen WARNING/CAUTION/NOTE in S1000D. Redakteure kennen die Zuordnung. Immer mit Textlabel, nie nur Farbe. |
-| Schrift IBM Plex Sans | Für Ingenieursdokumentation entworfen, eindeutige Ziffern, gute Lesbarkeit in dichten Tabellen. |
-| IBM Plex Sans Condensed für Überschriften und Reiter | Deutsche Komposita („Publikationsmodule“, „Trainingsdaten“) passen in Reiter und Tabellenköpfe, ohne umzubrechen. |
-| IBM Plex Mono nur für Kennungen | DMC, ICN, Dateipfade, XPath und Zeilennummern: Zeichen wie 0/O und 1/l müssen eindeutig sein. Nicht für Daten, Zählungen oder Dekoration. |
-| Keine Großbuchstaben-Labels | Labels in normaler Schreibweise, halbfett. Großbuchstaben bleiben den Hinweisen im Dokumentinhalt (WARNUNG, VORSICHT) vorbehalten. |
-| Radien 2 px (Felder, Knöpfe, Blätter) und 4 px (Dialoge) | Kanten wie bei Formularen und Datenblättern, keine Kapselform. |
-| Schatten nur für Menü, Dialog, Toast | Nur was über der Seite schwebt, wird angehoben (`--e-2`, `--e-3`). Alles andere liegt flach. |
-| Abstände im 8-px-Raster (`--s-1` 4 px bis `--s-8` 64 px) | Abschnitte untereinander `--s-6`, Inhalte in Abschnitten `--s-3`/`--s-4`: Weißraum trennt Ebenen. |
-| Knoten-Farben im Wissensgraph (7 Farben) | Kategoriale Datenvisualisierung, je Knotentyp eine Farbe, in der Legende mit Text benannt. Gilt nur im Graphen. |
-| Schachbrettmuster hinter Bildern | Zeigt transparente Bereiche in Grafiken an, funktional, keine Dekoration. |
-| Kein Logo | Es gibt kein freigegebenes Logo. Die Kopfzeile zeigt den Produktnamen als Wortmarke, das Favicon ist ein Platzhalter mit dem Buchstaben S. |
+| Aufgabenangemessenheit | Startpunkt ist die Arbeit: offene Befunde, Freigabestatus, „Mir zugewiesen“. Sammelaktionen für wiederkehrende Bearbeitung. Filter bleiben je Projekt gespeichert. |
+| Selbstbeschreibungsfähigkeit | Jede Seite hat Titel, Pfad und eine Statuszeile. Kontexthilfe (F1 bzw. Schaltfläche „Hilfe“) erklärt die aktuelle Seite. Leere Zustände sagen, warum sie leer sind und was zu tun ist. |
+| Erwartungskonformität | Navigation links, Suche oben, Konto oben rechts. Gleiche Begriffe überall (Upload, Analyse, Befund, Freigabe). Gleiche Aktion steht immer an derselben Stelle. |
+| Erlernbarkeit | Handbuch und Glossar in der Anwendung, Tastenkürzel-Übersicht unter „?“, Beschriftungen statt reiner Symbole. |
+| Steuerbarkeit | Jeder Dialog lässt sich mit Abbrechen oder Escape verlassen. Sortierung, Filter, Dichte, Design und Navigation sind wählbar. Lange Vorgänge zeigen Fortschritt. |
+| Robustheit gegen Benutzungsfehler | Löschen und Ablehnen fragen nach. Verwerfen und Freigabe trotz Verstoß verlangen eine Begründung. Fehlermeldungen nennen Ursache und nächsten Schritt und stehen am Feld. |
+| Benutzerbindung | Keine Ablenkung, keine Animationen. Rückmeldung nach jeder Aktion in Klartext („3 Befunde bestätigt“). |
 
-## Tokens
+## 2 Informationsdarstellung (ISO 9241-112)
 
-Stehen am Anfang von `frontend/src/app.css`: Abstände, Radien, Elevation, Flächen, Linien, Farben, Schriftgrößen. Komponenten verwenden nur diese Tokens.
+- **Entdeckbarkeit:** Alle Funktionen sind über die Seitenleiste oder sichtbare Schaltflächen erreichbar; Tastenkürzel sind nur Abkürzungen, nie der einzige Weg.
+- **Ablenkungsfreiheit:** Keine Verläufe, Schatten nur für schwebende Elemente (Menü, Dialog, Meldung), keine Dekoration.
+- **Unterscheidbarkeit:** Gruppen werden durch Flächen mit Rahmen und Kopfzeile getrennt (Panel), nicht durch Farbe allein.
+- **Eindeutige Interpretierbarkeit:** Zahlen mit Einheit oder Bezeichnung, Datum im deutschen Format, Zustände ausgeschrieben.
+- **Kompaktheit:** Zwei Dichten (normal, kompakt). Tabellen zeigen ein Objekt pro Zeile.
+- **Konsistenz:** Ein Satz Komponenten, ein Satz Tokens, siehe unten.
 
-## Mobil
+## 3 Visuelle Darstellung (ISO 9241-125)
 
-Unter 760 px: alle Bedienelemente mindestens 44 px hoch, Reiter umbrechen statt abgeschnitten zu werden, breite Tabellen scrollen innerhalb ihres Blatts, Seitenspalten stapeln sich.
+### Schrift
+
+- Systemschrift: Segoe UI (Windows), sonst Noto Sans bzw. Liberation Sans. Grund: Sie ist für Bildschirmdarstellung optimiert und den Beschäftigten aus Windows vertraut (Erwartungskonformität); es wird keine Webschrift geladen, die Anwendung funktioniert offline identisch.
+- Festbreitenschrift (Cascadia Mono, Consolas) nur für Kennungen: DMC, ICN, XPath, Dateipfade, Zeilennummern. Dort müssen 0/O und 1/l eindeutig sein.
+- Grundgröße 14 px, Sekundärtext 13 px, nie unter 12 px. Überschriften 24/18/16 px, Gewicht 600. Keine Versalien-Auszeichnung, keine gesperrte Schrift.
+- Zeilenhöhe 1,5 für Fließtext, Absatzbreite höchstens etwa 80 Zeichen.
+- Vergrößerung über Browser-Zoom bis 200 % ohne Informationsverlust (WCAG 1.4.4, 1.4.10).
+
+### Farbe
+
+Neutrale Flächen, eine Aktionsfarbe, Signalfarben nur für Zustände. Farbe codiert nie allein: jeder Zustand hat ein Textlabel (ISO 9241-125 Farbcodierung, WCAG 1.4.1).
+
+| Rolle | Hell | Dunkel | Kontrast (geprüft) |
+|---|---|---|---|
+| Hintergrund Anwendung | `#f3f4f6` | `#14171c` | |
+| Fläche (Panel, Tabelle) | `#ffffff` | `#1c2027` | |
+| Text | `#1d2330` | `#e7e9ed` | 15,7 : 1 / 13,4 : 1 |
+| Sekundärtext | `#5a6372` | `#a3abb8` | 6,1 : 1 / 7,1 : 1 |
+| Aktionsfarbe (Link, Primärknopf, Fokus) | `#0b5cad` | `#79b0f0` (Knopf `#2f6fbf`) | 6,7 : 1 / 7,2 : 1 |
+| Feldrahmen | `#7a8496` | `#6f7a8c` | 3,4 : 1 min. / 3,8 : 1 |
+| Fehler | `#b42318` auf `#fdecea` | `#ff9b8f` auf `#3a1f1f` | 5,8 : 1 / 7,4 : 1 |
+| Warnung | `#8a4b00` auf `#fff4e5` | `#f0b45a` auf `#352a14` | 6,3 : 1 / 7,6 : 1 |
+| In Ordnung | `#1e6b35` auf `#e7f4ec` | `#7fd39b` auf `#173022` | 5,8 : 1 / 7,9 : 1 |
+| Hinweis | `#2a5a8a` auf `#e9f1f9` | `#93bdf0` auf `#182a3d` | 6,3 : 1 / 7,5 : 1 |
+
+Rot, Gelb/Orange und Grün folgen der üblichen Bedeutung (Fehler, Warnung, in Ordnung). Blau ist ausschließlich Aktionsfarbe und für Hinweise.
+
+### Raster, Formen, Ebenen
+
+- Abstände im 8-px-Raster (4, 8, 12, 16, 24, 32, 48).
+- Radius 4 px für Felder, Knöpfe und Panels, 6 px für Dialoge. Keine Kapselformen außer für Zähler.
+- Ebenen: Anwendung → Panel (Rahmen, kein Schatten) → schwebend (Menü, Dialog, Meldung mit Schatten).
+
+## 4 Formulare (ISO 9241-143)
+
+- Beschriftung über dem Feld, linksbündig, immer sichtbar; Platzhalter nur als Beispiel, nie als Beschriftung.
+- Pflichtfelder sind als solche beschriftet, optionale Felder mit „(optional)“.
+- Prüfung beim Absenden; Fehlertext direkt am Feld, verbunden über `aria-describedby`, Fokus auf das erste fehlerhafte Feld.
+- Primäraktion rechts unten, Abbrechen links daneben. Eine Primäraktion pro Ansicht.
+- Zerstörende Aktionen in Rot mit Rückfrage, die das Objekt nennt.
+
+## 5 Barrierefreiheit (WCAG 2.2 AA)
+
+- Kontraste wie oben; Fokusrahmen 2 px in Aktionsfarbe mit 2 px Abstand, nie verdeckt (2.4.11).
+- Zielgrößen mindestens 24 × 24 px (2.5.8), auf Touch-Geräten 44 px.
+- Alles per Tastatur bedienbar, Reihenfolge = Lesereihenfolge, „Zum Inhalt springen“.
+- Einzeltasten-Kürzel lassen sich in den Einstellungen abschalten (2.1.4).
+- Statusmeldungen über `role="status"`, Fehler über `role="alert"`.
+- Bewegung nur, wenn „Bewegung reduzieren“ nicht gesetzt ist; es gibt ohnehin keine Animationen außer Fortschrittsbalken.
+
+## 6 Aufbau
+
+- **Kopfzeile:** Produktname, Navigation ein-/ausblenden, globale Suche (Strg+K), Hilfe, Konto.
+- **Seitenleiste:** Bereiche „Projekte“, „Administration“ (nur Admins), „Einstellungen“; in einem Projekt zusätzlich alle Projektbereiche mit Zählern. Ausblendbar; auf schmalen Bildschirmen als Menü.
+- **Seitenkopf:** Pfad, Titel, Statuszeile, Aktionen rechts.
+- **Inhalt:** Panels mit Kopfzeile (Titel links, Aktionen rechts). Tabellen: Text linksbündig, Zahlen rechtsbündig, sortierbare Spalten mit Pfeil und `aria-sort`.
+
+## 7 Tokens
+
+Stehen am Anfang von `frontend/src/app.css` (`:root` für hell, `[data-theme="dark"]` für dunkel, `[data-density="compact"]` für die kompakte Dichte). Komponenten verwenden ausschließlich diese Tokens.

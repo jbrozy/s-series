@@ -102,7 +102,7 @@
 <style>
   .viewsel { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-1); overflow: hidden; margin-bottom: 14px; }
   .viewsel button { border: none; border-radius: 0; }
-  .viewsel button.on { background: var(--accent); color: #fff; }
+  .viewsel button.on { background: var(--accent-btn); color: var(--accent-ink); }
   .intro { margin-bottom: 14px; max-width: 900px; }
   .layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
   .hits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }

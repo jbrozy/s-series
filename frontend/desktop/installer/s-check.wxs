@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S-Check Desktop als MSI für die Softwareverteilung (GPO, Intune, SCCM), Installation für alle Benutzer.
+
+    msiexec /i s-check.msi /qn SERVERURL=https://s-check.firma.de
+
+  SERVERURL schreibt HKLM\SOFTWARE\S-Check\ServerURL (Vorbelegung, änderbar). Ohne SERVERURL bleibt der Wert leer
+  und die Adresse wird bei der ersten Anmeldung eingegeben.
+  Fest vorgeben: Gruppenrichtlinie HKLM\SOFTWARE\Policies\S-Check, ServerURL (REG_SZ) und LockServer (DWORD 1).
+
+  Bau unter Linux: wixl -a x64 -D Version=1.0.0 -D Src=<Ordner> -o s-check.msi s-check.wxs
+  Bau unter Windows (WiX 3): candle -arch x64 -dVersion=1.0.0 -dSrc=<Ordner> s-check.wxs && light s-check.wixobj
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="S-Check" Language="1031" Codepage="1252" Version="$(var.Version)"
+           Manufacturer="S-Check" UpgradeCode="de5cfe56-148c-44e8-b9b4-5b0a0d35295e">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
+             Description="S-Check Desktop $(var.Version)" Comments="Oberfläche für den S-Check-Server" Languages="1031" SummaryCodepage="1252" />
+    <Media Id="1" Cabinet="scheck.cab" EmbedCab="yes" />
+
+    <Upgrade Id="de5cfe56-148c-44e8-b9b4-5b0a0d35295e">
+      <UpgradeVersion Minimum="0.0.0" Maximum="$(var.Version)" IncludeMinimum="yes" IncludeMaximum="no" Property="OLDERFOUND" />
+      <UpgradeVersion Minimum="$(var.Version)" IncludeMinimum="no" OnlyDetect="yes" Property="NEWERFOUND" />
+    </Upgrade>
+    <Condition Message="Eine neuere Version von S-Check ist bereits installiert.">NOT NEWERFOUND</Condition>
+    <InstallExecuteSequence>
+      <RemoveExistingProducts After="InstallInitialize" />
+    </InstallExecuteSequence>
+
+    <Property Id="SERVERURL" Secure="yes" />
+    <Icon Id="SCheckIcon" SourceFile="$(var.Src)/s-check.ico" />
+    <Property Id="ARPPRODUCTICON" Value="SCheckIcon" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="S-Check">
+          <Component Id="MainExe" Guid="08bc86e4-b33a-4bae-a8a6-ac1ce81bc329" Win64="yes">
+            <File Id="SCheckExe" Name="s-check.exe" Source="$(var.Src)/s-check.exe" KeyPath="yes" />
+          </Component>
+          <Component Id="ServerPreset" Guid="5ed4f497-e418-44c8-aa53-9cc311d03ddc" Win64="yes">
+            <RegistryValue Root="HKLM" Key="SOFTWARE\S-Check" Name="ServerURL" Type="string" Value="[SERVERURL]" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Component Id="StartMenu" Guid="82da22c4-23c1-42ec-8d47-24510516dd00" Win64="yes">
+          <Shortcut Id="StartMenuShortcut" Name="S-Check" Description="S-Check: Prüfung von S-Series-Dokumentation"
+                    Target="[INSTALLDIR]s-check.exe" WorkingDirectory="INSTALLDIR" Icon="SCheckIcon" />
+          <RegistryValue Root="HKCU" Key="Software\S-Check\Installer" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </Directory>
+
+    <Feature Id="Main" Title="S-Check" Level="1">
+      <ComponentRef Id="MainExe" />
+      <ComponentRef Id="ServerPreset" />
+      <ComponentRef Id="StartMenu" />
+    </Feature>
+  </Product>
+</Wix>

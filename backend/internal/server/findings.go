@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"github.com/lib/pq"
 	"io"
 	"mime"
 	"net/http"
@@ -60,7 +61,37 @@ const findingSelect = `SELECT f.id, COALESCE(f.file_id::text,''), f.file_path, f
 	LEFT JOIN finding_tracks t ON t.project_id=$2::uuid AND t.fingerprint=f.fingerprint
 	LEFT JOIN users au ON au.id=t.assignee_id`
 
-const findingOrder = ` ORDER BY CASE f.severity WHEN 'error' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, f.dmc, f.file_path, f.line, f.id`
+const sevRank = `CASE f.severity WHEN 'error' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END`
+const findingOrder = ` ORDER BY ` + sevRank + `, f.dmc, f.file_path, f.line, f.id`
+
+// sortOrder maps the sort parameter (column, optional "-" for descending)
+// onto a fixed ORDER BY; unknown values fall back to severity.
+func sortOrder(param string) string {
+	desc := strings.HasPrefix(param, "-")
+	key := strings.TrimPrefix(param, "-")
+	// The list shows the DMC, or the file name when a file has none, so that is the sort key.
+	cols := map[string][]string{
+		"severity": {sevRank},
+		"dmc":      {"COALESCE(NULLIF(f.dmc, ''), f.file_path)", "f.line"},
+		"category": {"f.category"},
+		"code":     {"f.code"},
+		"status":   {"CASE f.status WHEN 'open' THEN 0 WHEN 'accepted' THEN 1 WHEN 'fixed' THEN 2 ELSE 3 END"},
+		"assignee": {"COALESCE(au.name, '\uffff')"},
+	}
+	col, ok := cols[key]
+	if !ok {
+		return findingOrder
+	}
+	dir := " ASC"
+	if desc {
+		dir = " DESC"
+	}
+	parts := make([]string, len(col))
+	for i, c := range col {
+		parts[i] = c + dir
+	}
+	return " ORDER BY " + strings.Join(parts, ", ") + ", " + sevRank + ", f.dmc, f.line, f.id"
+}
 
 func scanFinding(sc interface{ Scan(...any) error }) (FindingRow, error) {
 	var f FindingRow
@@ -140,7 +171,7 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request, u *U
 		fail(w, err)
 		return
 	}
-	rows, err := s.db.QueryContext(r.Context(), findingSelect+` WHERE `+where+findingOrder+
+	rows, err := s.db.QueryContext(r.Context(), findingSelect+` WHERE `+where+sortOrder(r.URL.Query().Get("sort"))+
 		` LIMIT `+strconv.Itoa(limit)+` OFFSET `+strconv.Itoa(max(0, offset)), args...)
 	if err != nil {
 		fail(w, err)
@@ -452,4 +483,124 @@ func (s *Server) handleCommentFinding(w http.ResponseWriter, r *http.Request, u 
 	s.audit(r, u, ref.project, "finding.comment", "finding", ref.fingerprint, fmt.Sprintf("Kommentar zu Befund %s in %s", ref.code, ref.location),
 		map[string]any{"findingId": ref.id})
 	s.handleFindingActivity(w, r, u)
+}
+
+// handleBulkFindings applies one action to several findings of a run:
+// status change (with justification for dismissal) or assignment.
+// Each finding gets its own audit entry so its history stays complete.
+func (s *Server) handleBulkFindings(w http.ResponseWriter, r *http.Request, u *User) {
+	rid := r.PathValue("rid")
+	_, pid, err := s.requireRun(r.Context(), rid, u, "editor")
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	var in struct {
+		IDs    []int64 `json:"ids"`
+		Action string  `json:"action"` // status | assign
+		Status string  `json:"status"`
+		Note   string  `json:"note"`
+		UserID string  `json:"userId"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		fail(w, err)
+		return
+	}
+	if len(in.IDs) == 0 || len(in.IDs) > 1000 {
+		writeErr(w, 400, "Bitte zwischen 1 und 1000 Befunde auswählen.")
+		return
+	}
+	assigneeName := ""
+	switch in.Action {
+	case "status":
+		if _, ok := statusDE[in.Status]; !ok {
+			writeErr(w, 400, "Ungültiger Status")
+			return
+		}
+		if in.Status == "dismissed" && strings.TrimSpace(in.Note) == "" {
+			writeErr(w, 400, "Bitte begründen, warum die Befunde keine Fehler sind. Die Begründung gilt für alle ausgewählten Befunde.")
+			return
+		}
+	case "assign":
+		if in.UserID != "" {
+			if err := s.db.QueryRowContext(r.Context(), `SELECT u.name FROM users u JOIN project_members m ON m.user_id=u.id
+				WHERE m.project_id=$1 AND u.id::text=$2 AND NOT u.disabled`, pid, in.UserID).Scan(&assigneeName); err != nil {
+				writeErr(w, 400, "Zuweisen geht nur an aktive Mitglieder dieses Projekts.")
+				return
+			}
+		}
+	default:
+		writeErr(w, 400, "Aktion muss status oder assign sein.")
+		return
+	}
+	rows, err := s.db.QueryContext(r.Context(), `SELECT id, fingerprint, status, code, COALESCE(NULLIF(dmc,''), file_path) FROM findings
+		WHERE run_id=$1 AND id = ANY($2)`, rid, pq.Array(in.IDs))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	var refs []findingRef
+	for rows.Next() {
+		ref := findingRef{run: rid, project: pid}
+		var id int64
+		_ = rows.Scan(&id, &ref.fingerprint, &ref.status, &ref.code, &ref.location)
+		ref.id = fmt.Sprint(id)
+		refs = append(refs, ref)
+	}
+	rows.Close()
+	if len(refs) != len(in.IDs) {
+		writeErr(w, 400, "Einige Befunde gehören nicht zu dieser Analyse. Bitte die Liste neu laden.")
+		return
+	}
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	defer tx.Rollback()
+	for _, ref := range refs {
+		switch in.Action {
+		case "status":
+			if _, err := tx.ExecContext(r.Context(), `UPDATE findings SET status=$1, status_note=$2 WHERE id=$3`, in.Status, in.Note, ref.id); err != nil {
+				fail(w, err)
+				return
+			}
+			if in.Status == "dismissed" {
+				_, err = tx.ExecContext(r.Context(), `INSERT INTO finding_suppressions(project_id, fingerprint, note, created_by) VALUES ($1,$2,$3,$4)
+					ON CONFLICT (project_id, fingerprint) DO UPDATE SET note=EXCLUDED.note`, pid, ref.fingerprint, in.Note, u.ID)
+			} else {
+				_, err = tx.ExecContext(r.Context(), `DELETE FROM finding_suppressions WHERE project_id=$1 AND fingerprint=$2`, pid, ref.fingerprint)
+			}
+		case "assign":
+			if in.UserID == "" {
+				_, err = tx.ExecContext(r.Context(), `DELETE FROM finding_tracks WHERE project_id=$1 AND fingerprint=$2`, pid, ref.fingerprint)
+			} else {
+				_, err = tx.ExecContext(r.Context(), `INSERT INTO finding_tracks(project_id, fingerprint, assignee_id, assigned_by) VALUES ($1,$2,$3,$4)
+					ON CONFLICT (project_id, fingerprint) DO UPDATE SET assignee_id=EXCLUDED.assignee_id, assigned_by=EXCLUDED.assigned_by, assigned_at=now()`,
+					pid, ref.fingerprint, in.UserID, u.ID)
+			}
+		}
+		if err != nil {
+			fail(w, err)
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		fail(w, err)
+		return
+	}
+	for _, ref := range refs {
+		if in.Action == "status" {
+			s.audit(r, u, pid, "finding.status", "finding", ref.fingerprint,
+				fmt.Sprintf("Befund %s in %s: %s → %s (Sammelaktion)", ref.code, ref.location, statusDE[ref.status], statusDE[in.Status]),
+				map[string]any{"from": ref.status, "to": in.Status, "note": in.Note, "findingId": ref.id, "bulk": len(refs)})
+		} else {
+			summary := fmt.Sprintf("Befund %s in %s an %s zugewiesen (Sammelaktion)", ref.code, ref.location, assigneeName)
+			if in.UserID == "" {
+				summary = fmt.Sprintf("Zuweisung von Befund %s in %s aufgehoben (Sammelaktion)", ref.code, ref.location)
+			}
+			s.audit(r, u, pid, "finding.assign", "finding", ref.fingerprint, summary, map[string]any{"to": in.UserID, "findingId": ref.id, "bulk": len(refs)})
+		}
+	}
+	writeJSON(w, 200, map[string]int{"updated": len(refs)})
 }

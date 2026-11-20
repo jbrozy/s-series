@@ -73,7 +73,13 @@
 {/snippet}
 
 <div class="page">
-  <h1>Administration</h1>
+  <header class="pagehead">
+    <div class="titles">
+      <nav class="crumbs" aria-label="Pfad"><ol><li><a href={href('/')}>Projekte</a></li><li aria-current="page">Administration</li></ol></nav>
+      <h1>Administration</h1>
+      <p class="sub">Modell-Schnittstellen, Benutzerkonten, Systemstatus und Protokoll aller Projekte.</p>
+    </div>
+  </header>
   <nav class="tabs admintabs" aria-label="Administrationsbereiche">
     <a href={href('/admin/models')} class:active={tab === 'models'}>Modelle</a>
     <a href={href('/admin/users')} class:active={tab === 'users'}>Benutzer</a>

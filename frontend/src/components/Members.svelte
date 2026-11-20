@@ -1,4 +1,6 @@
 <script>
+  import SortTh from './SortTh.svelte';
+  import { createSorter } from '../lib/sort.svelte.js';
   import LoadError from './LoadError.svelte';
   import { onMount } from 'svelte';
   import { api, fmt, labels } from '../lib/api.js';
@@ -8,6 +10,8 @@
   import Credentials from './Credentials.svelte';
 
   let { project } = $props();
+  const roleRank = { owner: 0, editor: 1, viewer: 2 };
+  const sorter = createSorter('name', { name: (m) => m.name, role: (m) => roleRank[m.role], last: (m) => (m.lastLoginAt ? -new Date(m.lastLoginAt).getTime() : null) }, 'asc', 'scheck.sort.members');
   let members = $state([]);
   const isOwner = $derived(project.myRole === 'owner');
   const isAdmin = $derived(session.user.role === 'admin');
@@ -139,9 +143,9 @@
   {:else}
   <section class="card">
     <table>
-      <thead><tr><th>Name</th><th>Rolle</th><th>Letzte Anmeldung</th><th><span class="sr-only">Aktionen</span></th></tr></thead>
+      <thead><tr><SortTh {sorter} key="name">Name</SortTh><SortTh {sorter} key="role">Rolle</SortTh><SortTh {sorter} key="last">Letzte Anmeldung</SortTh><th><span class="sr-only">Aktionen</span></th></tr></thead>
       <tbody>
-        {#each members as m (m.userId)}
+        {#each sorter.apply(members) as m (m.userId)}
           <tr class:off={m.disabled}>
             <td>
               <strong>{m.name}</strong>{#if m.userId === session.user.id} <span class="hint">(Sie)</span>{/if}

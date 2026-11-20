@@ -1,4 +1,7 @@
 <script>
+  import { route } from '../lib/router.svelte.js';
+  import SortTh from './SortTh.svelte';
+  import { createSorter } from '../lib/sort.svelte.js';
   import LoadError from './LoadError.svelte';
   import { onMount } from 'svelte';
   import { api, labels } from '../lib/api.js';
@@ -6,6 +9,8 @@
   import Modal from './Modal.svelte';
 
   let { project, snapshot, canEdit } = $props();
+  const sevRank = { error: 0, warning: 1, info: 2 };
+  const sorter = createSorter('name', { enabled: (r) => (r.enabled ? 0 : 1), name: (r) => r.name, type: (r) => labels.ruleType[r.type] || r.type, severity: (r) => sevRank[r.severity] }, 'asc', 'scheck.sort.rules');
   let rules = $state(null);
   let templates = $state([]);
   let edit = $state(null); // { id?, name, type, severity, enabled, cfg }
@@ -21,6 +26,9 @@
     loadError = null;
     try {
       [rules, { templates }] = await Promise.all([api.get(`/projects/${project.id}/rules`), api.get('/rules/templates')]);
+      // opened from the search: edit the requested rule
+      const want = route.query.edit && rules.find((r) => r.id === route.query.edit);
+      if (want && canEdit) openEdit(want);
     } catch (e) { loadError = e; }
   }
 
@@ -178,9 +186,9 @@
 {:else}
   <div class="card">
     <table>
-      <thead><tr><th style="width:60px">Aktiv</th><th>Regel</th><th>Typ</th><th>Schwere</th><th>Inhalt</th><th><span class="sr-only">Aktionen</span></th></tr></thead>
+      <thead><tr><SortTh {sorter} key="enabled">Aktiv</SortTh><SortTh {sorter} key="name">Regel</SortTh><SortTh {sorter} key="type">Typ</SortTh><SortTh {sorter} key="severity">Schwere</SortTh><th>Inhalt</th><th><span class="sr-only">Aktionen</span></th></tr></thead>
       <tbody>
-        {#each shown as r (r.id)}
+        {#each sorter.apply(shown) as r (r.id)}
           <tr class:off={!r.enabled}>
             <td><input type="checkbox" checked={r.enabled} disabled={!canEdit} onchange={() => toggle(r)} aria-label={`Regel „${r.name}“ aktiv`} /></td>
             <td><strong>{r.name}</strong>{#if r.source === 'brex'} <span class="badge accent">BREX</span>{/if}</td>

@@ -6,7 +6,7 @@
 
   let { pid = '', admin = false } = $props();
 
-  const areas = [
+  const areas = $derived([
     ['', 'Alle Bereiche'],
     ['finding.', 'Befunde'],
     ['release.', 'Freigaben'],
@@ -19,7 +19,7 @@
     ['member.', 'Mitglieder'],
     ['project.', 'Projekt'],
     ...(admin ? [['auth.', 'Anmeldungen'], ['user.', 'Konten'], ['token.', 'API-Tokens'], ['settings.', 'Einstellungen']] : [])
-  ];
+  ]);
   const areaOf = (action) => areas.find(([k]) => k && action.startsWith(k))?.[1] || action;
 
   let area = $state('');
@@ -33,7 +33,7 @@
   let loading = $state(false);
   let timer;
 
-  const base = admin ? '/admin/audit' : `/projects/${pid}/audit`;
+  const base = $derived(admin ? '/admin/audit' : `/projects/${pid}/audit`);
   const params = $derived(
     new URLSearchParams(Object.entries({ action: area, q, from, to }).filter(([, v]) => v)).toString()
   );

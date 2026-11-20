@@ -1,0 +1,27 @@
+
+1 ICON "s-check.ico"
+1 24 "s-check.manifest"
+1 VERSIONINFO
+ FILEVERSION @V1@,@V2@,@V3@,0
+ PRODUCTVERSION @V1@,@V2@,@V3@,0
+ FILEOS 0x40004
+ FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040704B0"
+    BEGIN
+      VALUE "CompanyName", "S-Check"
+      VALUE "FileDescription", "S-Check Desktop"
+      VALUE "FileVersion", "@VERSION@"
+      VALUE "InternalName", "s-check"
+      VALUE "OriginalFilename", "s-check.exe"
+      VALUE "ProductName", "S-Check"
+      VALUE "ProductVersion", "@VERSION@"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0407, 1200
+  END
+END

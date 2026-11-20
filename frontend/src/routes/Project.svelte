@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { api, fmt } from '../lib/api.js';
+  import { api, fmt, labels } from '../lib/api.js';
   import { route, go, href } from '../lib/router.svelte.js';
   import { toastError } from '../lib/state.svelte.js';
   import Overview from '../components/Overview.svelte';
@@ -12,6 +12,8 @@
   import Members from '../components/Members.svelte';
   import Release from '../components/Release.svelte';
   import AuditLog from '../components/AuditLog.svelte';
+  import { projectNav, projectSections } from '../lib/nav.svelte.js';
+  import LoadError from '../components/LoadError.svelte';
 
   let { pid } = $props();
   let project = $state(null);
@@ -39,6 +41,7 @@
   onDestroy(() => clearTimeout(timer));
 
   async function load() {
+    loadError = '';
     try {
       [project, snapshots] = await Promise.all([api.get(`/projects/${pid}`), api.get(`/projects/${pid}/snapshots`)]);
     } catch (e) {
@@ -61,52 +64,58 @@
     go(`/p/${pid}/${tab}`, { snap: id });
   }
 
-  const tabs = $derived([
-    ['overview', 'Übersicht'],
-    ['findings', 'Befunde'],
-    ['release', 'Freigabe'],
-    ['images', 'Bilder'],
-    ['rules', 'Business Rules'],
-    ['knowledge', 'Wissensbasis'],
-    ['training', 'Trainingsdaten'],
-    ['members', 'Mitglieder'],
-    ...(canEdit ? [['audit', 'Protokoll']] : [])
-  ]);
+  const sectionLabel = $derived(projectSections.find(([k]) => k === tab)?.[1] || 'Übersicht');
+
+  // side navigation: project, counts and release state of the selected upload
+  $effect(() => {
+    if (!project) return;
+    projectNav.project = { id: project.id, name: project.name, myRole: project.myRole };
+    projectNav.snapshotId = route.query.snap || '';
+    projectNav.counts = { findings: openFindings, images: imagesToReview };
+  });
+  $effect(() => {
+    const id = snapshot?.id;
+    const done = snapshot?.latestRun?.status === 'done';
+    projectNav.release = '';
+    if (!id || !done) return;
+    api.get(`/snapshots/${id}/release`).then((r) => {
+      projectNav.release = r.current && !r.stale ? r.current.decision : '';
+    }).catch(() => {});
+  });
+  onDestroy(() => { projectNav.project = null; projectNav.counts = {}; projectNav.release = ''; });
 </script>
 
 <div class="page">
   {#if loadError}
-    <div class="error-box">{loadError}</div>
+    <LoadError what="Das Projekt" error={loadError} onretry={load} />
   {:else if !project}
-    <div class="empty">Lade Projekt …</div>
+    <div class="empty" role="status">Projekt wird geladen …</div>
   {:else}
-    <div class="crumbs"><a href={href('/')}>Projekte</a> / <span>{project.name}</span></div>
-    <div class="row head">
-      <div class="grow">
-        <h1>{project.name}</h1>
-        {#if project.description}<p class="muted">{project.description}</p>{/if}
+    <header class="pagehead">
+      <div class="titles">
+        <nav class="crumbs" aria-label="Pfad">
+          <ol>
+            <li><a href={href('/')}>Projekte</a></li>
+            {#if tab === 'overview'}<li aria-current="page">{project.name}</li>
+            {:else}<li><a href={href(`/p/${pid}/overview`, { snap: route.query.snap })}>{project.name}</a></li><li aria-current="page">{sectionLabel}</li>{/if}
+          </ol>
+        </nav>
+        <h1>{tab === 'overview' ? project.name : sectionLabel}</h1>
+        <p class="sub">
+          {#if tab === 'overview'}{project.description || `${project.standard} · ${labels.role[project.myRole]}`}{:else}{project.name}{/if}
+        </p>
       </div>
       {#if snapshots.length}
         <label class="snapsel">
           <span class="lbl">Upload / Stand</span>
-          <select value={sid} aria-label="Upload auswählen" onchange={(e) => selectSnapshot(e.currentTarget.value)}>
+          <select value={sid} onchange={(e) => selectSnapshot(e.currentTarget.value)}>
             {#each snapshots as s}
               <option value={s.id}>{s.label}, {fmt.date(s.createdAt)}</option>
             {/each}
           </select>
         </label>
       {/if}
-    </div>
-
-    <nav class="tabs" aria-label="Projektbereiche">
-      {#each tabs as [key, label]}
-        <a href={href(`/p/${pid}/${key}`, { snap: route.query.snap })} class:active={tab === key}>
-          {label}
-          {#if key === 'findings' && openFindings !== null}<span class="badge count {openFindings ? 'warning' : 'ok'}">{fmt.num(openFindings)}</span>{/if}
-          {#if key === 'images' && imagesToReview}<span class="badge count error">{imagesToReview}</span>{/if}
-        </a>
-      {/each}
-    </nav>
+    </header>
 
     {#if tab === 'overview'}
       <Overview {project} {snapshots} {snapshot} {canEdit} onchange={refreshSnapshots} />
@@ -137,10 +146,6 @@
 </div>
 
 <style>
-  .crumbs { font-size: var(--t-sm); color: var(--muted); margin-bottom: var(--s-2); }
-  .head { align-items: flex-end; margin-bottom: var(--s-4); flex-wrap: wrap; row-gap: var(--s-3); }
-  .head h1 { overflow-wrap: anywhere; }
   .snapsel { width: 340px; max-width: 100%; }
-  .tabs .badge { margin-left: var(--s-1); }
   @media (max-width: 640px) { .snapsel { width: 100%; } }
 </style>

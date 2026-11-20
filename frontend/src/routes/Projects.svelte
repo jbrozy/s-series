@@ -1,4 +1,6 @@
 <script>
+  import SortTh from '../components/SortTh.svelte';
+  import { createSorter } from '../lib/sort.svelte.js';
   import LoadError from '../components/LoadError.svelte';
   import { onMount } from 'svelte';
   import { api, fmt, labels } from '../lib/api.js';
@@ -14,6 +16,15 @@
   let filter = $state('');
   let loadError = $state(null);
 
+  const stateOf = (p) => p.snapshotCount === 0 ? 'none' : !p.latestRunStatus ? 'unchecked' : ['queued', 'running'].includes(p.latestRunStatus) ? 'running'
+    : p.latestRunStatus === 'failed' ? 'failed' : p.openFindings > 0 ? 'open' : 'clean';
+  const stateText = { none: 'kein Upload', unchecked: 'nicht geprüft', running: 'Analyse läuft', failed: 'Analyse fehlgeschlagen', open: 'Befunde offen', clean: 'ohne Befunde' };
+  const stateBadge = { none: 'outline', unchecked: 'warning', running: 'info', failed: 'error', open: 'warning', clean: 'ok' };
+  const stateRank = { failed: 0, open: 1, unchecked: 2, running: 3, clean: 4, none: 5 };
+  const sorter = createSorter('name', {
+    name: (p) => p.name, standard: (p) => p.standard, last: (p) => p.lastUpload ? new Date(p.lastUpload).getTime() : null,
+    open: (p) => p.openFindings, state: (p) => stateRank[stateOf(p)], release: (p) => p.latestRelease || 'z', role: (p) => labels.role[p.myRole]
+  }, 'asc', 'scheck.sort.projects');
   const filtered = $derived(
     (projects || []).filter((p) => !filter || (p.name + ' ' + p.description).toLowerCase().includes(filter.toLowerCase()))
   );
@@ -35,71 +46,66 @@
 </script>
 
 <div class="page">
-  <div class="row head">
-    <div class="grow">
+  <header class="pagehead">
+    <div class="titles">
       <h1>Projekte</h1>
-      <p class="muted">Jedes Projekt hat eigene Business Rules, Uploads und Prüfergebnisse.</p>
+      <p class="sub">Jedes Projekt hat eigene Uploads, Business Rules, Freigabekriterien und Mitglieder.</p>
     </div>
-    <input class="search" aria-label="Projekte filtern" placeholder="Projekte filtern …" bind:value={filter} />
-    <button class="primary" onclick={() => (showNew = true)}>+ Neues Projekt</button>
-  </div>
+    <div class="row actions">
+      <label class="search"><span class="sr-only">Projekte filtern</span>
+        <input type="search" placeholder="Projekte filtern" bind:value={filter} /></label>
+      <button class="primary" onclick={() => (showNew = true)}>Neues Projekt</button>
+    </div>
+  </header>
 
   {#if loadError}
     <LoadError what="Die Projekte" error={loadError} onretry={load} />
   {:else if projects === null}
     <div class="empty" role="status">Projekte werden geladen …</div>
   {:else if projects.length === 0}
-    <div class="card empty-state">
+    <section class="card card-pad stack empty-state">
       <h2>Noch keine Projekte</h2>
-      <p class="muted">Legen Sie ein Projekt an und laden Sie den Export Ihres CSDB-/Redaktionssystems hoch (ZIP, Ordner oder einzelne XML-Dateien und Grafiken). Ein HTML-Export geht ebenfalls.</p>
-      <button class="primary" onclick={() => (showNew = true)}>Erstes Projekt anlegen</button>
-    </div>
+      <p class="muted">Legen Sie ein Projekt an und laden Sie danach den Export Ihres CSDB- oder Redaktionssystems hoch (ZIP, Ordner, einzelne XML-Dateien oder ein HTML-Export).</p>
+      <div><button class="primary" onclick={() => (showNew = true)}>Erstes Projekt anlegen</button></div>
+    </section>
   {:else}
-    <div class="register card">
-      <div class="reg-head label-quiet" aria-hidden="true">
-        <span>Projekt</span><span>Stand</span><span>Prüfstatus</span>
+    <section class="card">
+      <div class="panel-head">
+        <h2 class="grow">{filtered.length === projects.length ? `${projects.length} Projekte` : `${filtered.length} von ${projects.length} Projekten`}</h2>
       </div>
-      {#each filtered as p (p.id)}
-        {@const state = p.snapshotCount === 0 ? 'none' : !p.latestRunStatus ? 'unchecked' : ['queued', 'running'].includes(p.latestRunStatus) ? 'running' : p.latestRunStatus === 'failed' ? 'failed' : p.openFindings > 0 ? 'open' : 'clean'}
-        <a class="proj state-{state}" href={href(`/p/${p.id}`)}>
-          <div class="who">
-            <div class="row name">
-              <h2 class="ellipsis">{p.name}</h2>
-              <span class="badge outline">{p.standard}</span>
-            </div>
-            <p class="desc">{p.description || 'Keine Beschreibung'}</p>
-          </div>
-          <div class="when">
-            {#if p.snapshotCount}
-              <span>{p.snapshotCount} {p.snapshotCount === 1 ? 'Upload' : 'Uploads'}</span>
-              <span class="muted">zuletzt {fmt.date(p.lastUpload)}</span>
-            {:else}
-              <span class="muted">Kein Upload</span>
-            {/if}
-          </div>
-          <div class="status">
-            {#if state === 'none'}
-              <span class="badge outline">wartet auf ersten Upload</span>
-            {:else if state === 'unchecked'}
-              <span class="badge warning" title="Neuester Upload: {p.latestLabel}">Neuester Upload nicht geprüft</span>
-            {:else if state === 'running'}
-              <span class="badge info">Analyse läuft</span>
-            {:else if state === 'failed'}
-              <span class="badge error">Analyse fehlgeschlagen</span>
-            {:else if state === 'open'}
-              <span class="badge warning" title="Neuester Upload: {p.latestLabel}">{fmt.num(p.openFindings)} offene Befunde</span>
-            {:else}
-              <span class="badge ok">keine offenen Befunde</span>
-            {/if}
-            {#if p.latestRelease === 'approved'}<span class="badge ok">freigegeben</span>
-            {:else if p.latestRelease === 'rejected'}<span class="badge error">abgelehnt</span>{/if}
-            <span class="role">{labels.role[p.myRole] || p.myRole}</span>
-          </div>
-        </a>
-      {:else}
-        <p class="empty">Kein Projekt passt zum Filter „{filter}“.</p>
-      {/each}
-    </div>
+      <table>
+        <thead>
+          <tr>
+            <SortTh {sorter} key="name">Projekt</SortTh>
+            <SortTh {sorter} key="standard">Standard</SortTh>
+            <SortTh {sorter} key="last">Letzter Upload</SortTh>
+            <SortTh {sorter} key="open" align="right">Offene Befunde</SortTh>
+            <SortTh {sorter} key="state">Prüfstatus</SortTh>
+            <SortTh {sorter} key="release">Freigabe</SortTh>
+            <SortTh {sorter} key="role">Ihre Rolle</SortTh>
+          </tr>
+        </thead>
+        <tbody>
+          {#each sorter.apply(filtered) as p (p.id)}
+            {@const st = stateOf(p)}
+            <tr>
+              <td class="name">
+                <a href={href(`/p/${p.id}`)}>{p.name}</a>
+                {#if p.description}<span class="desc">{p.description}</span>{/if}
+              </td>
+              <td data-label="Standard">{p.standard}</td>
+              <td class="nowrap" data-label="Letzter Upload">{#if p.snapshotCount}{fmt.date(p.lastUpload)}<span class="desc">{p.latestLabel}, {p.snapshotCount} {p.snapshotCount === 1 ? 'Upload' : 'Uploads'}</span>{:else}<span class="muted">kein Upload</span>{/if}</td>
+              <td class="right" data-label="Offene Befunde">{st === 'open' || st === 'clean' ? fmt.num(p.openFindings) : ''}</td>
+              <td data-label="Prüfstatus"><span class="badge {stateBadge[st]}">{stateText[st]}</span></td>
+              <td data-label="Freigabe">{#if p.latestRelease === 'approved'}<span class="badge ok">freigegeben</span>{:else if p.latestRelease === 'rejected'}<span class="badge error">abgelehnt</span>{:else}<span class="muted">offen</span>{/if}</td>
+              <td data-label="Ihre Rolle">{labels.role[p.myRole] || p.myRole}</td>
+            </tr>
+          {:else}
+            <tr><td colspan="7" class="empty">Kein Projekt passt zum Filter „{filter}“.</td></tr>
+          {/each}
+        </tbody>
+      </table>
+    </section>
   {/if}
 </div>
 
@@ -124,39 +130,23 @@
 {/if}
 
 <style>
-  .head { margin-bottom: var(--s-5); align-items: flex-end; flex-wrap: wrap; row-gap: var(--s-3); }
-  .head p { margin-top: var(--s-1); }
+  .actions { flex-wrap: wrap; }
   .search { width: 260px; }
-
-  .register { overflow: hidden; }
-  .reg-head, .proj {
-    display: grid; grid-template-columns: minmax(0, 1fr) 190px 280px; gap: var(--s-5); align-items: center;
-    padding: var(--s-3) var(--s-5) var(--s-3) calc(var(--s-5) - 4px);
-  }
-  .reg-head { background: var(--surface-2); border-bottom: 1px solid var(--ink-2); padding-top: var(--s-2); padding-bottom: var(--s-2); border-left: 4px solid transparent; }
-  .proj { color: var(--ink); border-left: 4px solid var(--line-strong); border-top: 1px solid var(--line); }
-  .proj:first-of-type { border-top: none; }
-  .proj:hover { text-decoration: none; background: #fbf9f4; }
-  .proj:hover h2 { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-  .state-open, .state-unchecked { border-left-color: var(--warning); }
-  .state-failed { border-left-color: var(--error); }
-  .state-running { border-left-color: var(--info); }
-  .state-clean { border-left-color: var(--ok); }
-  .name { gap: var(--s-2); }
-  .name h2 { font-size: 19px; }
-  .desc { color: var(--muted); font-size: var(--t-sm); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .when { display: flex; flex-direction: column; font-size: var(--t-sm); }
-  .status { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
-  .role { font-size: var(--t-sm); color: var(--muted); }
-
-  .empty-state { padding: var(--s-7) var(--s-5); text-align: center; display: flex; flex-direction: column; gap: var(--s-3); align-items: center; border-style: dashed; border-color: var(--line-strong); }
-  .empty-state p { max-width: 520px; }
-
-  @media (max-width: 900px) {
-    .reg-head { display: none; }
-    .proj { grid-template-columns: minmax(0, 1fr); gap: var(--s-2); padding: var(--s-3) var(--s-4) var(--s-3) calc(var(--s-4) - 4px); }
-    .when { flex-direction: row; gap: var(--s-2); }
-    .search { width: 100%; }
-    .head .grow { flex-basis: 100%; }
+  .name a { font-weight: 600; }
+  .desc { display: block; color: var(--muted); font-size: var(--t-sm); }
+  .empty-state { max-width: 640px; }
+  @media (max-width: 760px) {
+    .actions, .search { width: 100%; }
+    .actions button { flex: 1; }
+    /* one project per block; sort buttons stay available as a bar */
+    table, tbody, tr, td { display: block; }
+    thead tr { display: flex; flex-wrap: wrap; gap: var(--s-1); padding: var(--s-2) var(--s-3); background: var(--surface-2); border-bottom: 1px solid var(--line); }
+    thead :global(th) { display: block; border: none; padding: 0; background: none; }
+    thead :global(th .sort) { min-height: 44px; padding: 0 var(--s-2); border: 1px solid var(--line-strong); border-radius: var(--r-1); background: var(--surface); }
+    tbody tr { padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line); }
+    tbody td { border: none; padding: 2px 0; text-align: left; white-space: normal; }
+    tbody td[data-label]::before { content: attr(data-label) ': '; color: var(--muted); font-size: var(--t-sm); }
+    tbody td.name { margin-bottom: var(--s-1); }
+    tbody td.name a { display: inline-block; min-height: 32px; }
   }
 </style>

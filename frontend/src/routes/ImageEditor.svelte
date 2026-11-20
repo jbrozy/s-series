@@ -172,12 +172,12 @@
 
 <div class="page">
   {#if !image}
-    <div class="empty">Lade Bild …</div>
+    <div class="empty" role="status">Bild wird geladen …</div>
   {:else}
-    <div class="crumbs">
-      <a href={href('/')}>Projekte</a> / <a href={href(`/p/${pid}`)}>{project?.name}</a> /
-      <a href={href(`/p/${pid}/images`, { snap })}>Bilder</a> / <span class="mono">{image.icn}</span>
-    </div>
+    <nav class="crumbs" aria-label="Pfad"><ol>
+      <li><a href={href('/')}>Projekte</a></li><li><a href={href(`/p/${pid}`)}>{project?.name}</a></li>
+      <li><a href={href(`/p/${pid}/images`, { snap })}>Bilder</a></li><li aria-current="page" class="mono">{image.icn}</li>
+    </ol></nav>
     <div class="row head">
       <h1 class="grow title">{image.icn}</h1>
       <span class="badge {statusClass[image.status]}">{labels.imageStatus[image.status]}</span>
@@ -283,15 +283,15 @@
   .viewbar { padding: 10px 12px; border-bottom: 1px solid var(--line); gap: 14px; }
   .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-1); overflow: hidden; }
   .seg button { border: none; border-radius: 0; }
-  .seg button.on { background: var(--accent); color: #fff; }
+  .seg button.on { background: var(--accent-btn); color: var(--accent-ink); }
   .stagewrap { padding: 14px; background: var(--surface-sunken) repeating-conic-gradient(var(--bg) 0 25%, var(--surface-sunken) 0 50%) 0 0 / 18px 18px; display: grid; place-items: center; }
   .stage { position: relative; user-select: none; touch-action: none; cursor: crosshair; }
   .stage img { width: 100%; height: 100%; display: block; pointer-events: none; }
-  .box { position: absolute; border: 2px solid var(--error); background: rgba(163, 22, 27, .12); cursor: move; }
-  .box.manual { border-color: var(--warning); background: rgba(138, 83, 0, .12); }
-  .box.sel { outline: 2px solid #fff; box-shadow: 0 0 0 4px rgba(11, 79, 138, .8); }
-  .tag { position: absolute; left: -2px; top: -22px; background: var(--error); color: #fff; font-size: var(--t-xs); padding: 1px 6px; border-radius: var(--r-1) var(--r-1) 0 0; white-space: nowrap; }
-  .box.manual .tag { background: var(--warning); }
+  .box { position: absolute; border: 2px solid #b42318; background: rgba(180, 35, 24, .12); cursor: move; }
+  .box.manual { border-color: #8a4b00; background: rgba(138, 75, 0, .12); }
+  .box.sel { outline: 2px solid #fff; box-shadow: 0 0 0 4px rgba(11, 92, 173, .85); }
+  .tag { position: absolute; left: -2px; top: -22px; background: #b42318; color: #fff; font-size: var(--t-xs); padding: 1px 6px; border-radius: var(--r-1) var(--r-1) 0 0; white-space: nowrap; }
+  .box.manual .tag { background: #8a4b00; }
   .handle { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: #fff; border: 2px solid var(--accent); border-radius: 2px; cursor: nwse-resize; }
   .boxes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
   .boxes li { display: flex; align-items: center; border-radius: var(--r-1); }

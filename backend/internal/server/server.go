@@ -45,6 +45,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	m.HandleFunc("GET /api/auth/me", s.authed(s.handleMe))
 	m.HandleFunc("PATCH /api/auth/me", s.authed(s.handleUpdateMe))
+	m.HandleFunc("PUT /api/auth/me/preferences", s.authed(s.handlePutPreferences))
 	m.HandleFunc("POST /api/auth/password", s.authed(s.handleChangePassword))
 	m.HandleFunc("GET /api/auth/config", s.handleAuthConfig)
 
@@ -81,6 +82,8 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/findings/{fid}/activity", s.authed(s.handleFindingActivity))
 	m.HandleFunc("POST /api/findings/{fid}/comments", s.authed(s.handleCommentFinding))
 	m.HandleFunc("GET /api/runs/{rid}/resolved", s.authed(s.handleResolvedFindings))
+	m.HandleFunc("POST /api/runs/{rid}/findings/bulk", s.authed(s.handleBulkFindings))
+	m.HandleFunc("GET /api/search", s.authed(s.handleGlobalSearch))
 
 	m.HandleFunc("GET /api/snapshots/{sid}/images", s.authed(s.handleListImages))
 	m.HandleFunc("GET /api/images/{iid}", s.authed(s.handleGetImage))

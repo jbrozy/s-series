@@ -9,14 +9,27 @@
   let { project, snapshot } = $props();
 
   const TYPES = {
-    model: { label: 'Modell', color: '#15181c', shape: 'round-rectangle' },
-    sns: { label: 'Systeme & Baugruppen', color: '#565c63', shape: 'round-rectangle' },
-    dm: { label: 'Datenmodule', color: '#0f4a75', shape: 'ellipse' },
+    model: { label: 'Modell', color: '#1d2330', shape: 'round-rectangle' },
+    sns: { label: 'Systeme & Baugruppen', color: '#5a6372', shape: 'round-rectangle' },
+    dm: { label: 'Datenmodule', color: '#0b5cad', shape: 'ellipse' },
     pm: { label: 'Publikationsmodule', color: '#7a5a1e', shape: 'hexagon' },
     icn: { label: 'Grafiken', color: '#1d6b5a', shape: 'rectangle' },
     part: { label: 'Teile & Betriebsstoffe', color: '#56651c', shape: 'diamond' },
-    acronym: { label: 'Abkürzungen', color: '#7a7f86', shape: 'tag' }
+    acronym: { label: 'Abkürzungen', color: '#5f6673', shape: 'tag' }
   };
+  // categorical colours for the dark theme: same hues, lighter so they stand out on a dark surface
+  const DARK = { model: '#e7e9ed', sns: '#a3abb8', dm: '#79b0f0', pm: '#d9b26a', icn: '#5fc4a8', part: '#a9c25a', acronym: '#9aa1ad' };
+  const EDGE_TYPE = { references: 'dm', contains: 'pm', uses_graphic: 'icn', requires_part: 'part', lists_part: 'part', defines: 'acronym' };
+  let dark = $state(document.documentElement.dataset.theme === 'dark');
+  const colorOf = (t) => (dark ? DARK[t] : TYPES[t]?.color) || (dark ? DARK.acronym : TYPES.acronym.color);
+  const edgeColor = (type) => (EDGE_TYPE[type] ? colorOf(EDGE_TYPE[type]) : dark ? '#4a5262' : '#c3c9d3');
+  const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  // rebuild the graph when the theme changes
+  const themeWatch = new MutationObserver(() => {
+    const d = document.documentElement.dataset.theme === 'dark';
+    if (d !== dark) { dark = d; if (cy) render(); }
+  });
+  themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   const EDGE = {
     part_of: { out: 'gehört zu', in: 'umfasst', color: '#c9c3b6', arrow: 'none' },
     references: { out: 'verweist auf', in: 'wird referenziert von', color: '#0f4a75', arrow: 'triangle' },
@@ -45,7 +58,7 @@
   const nodeById = $derived(new Map((data?.nodes || []).map((n) => [String(n.id), n])));
 
   onMount(load);
-  onDestroy(() => cy?.destroy());
+  onDestroy(() => { cy?.destroy(); themeWatch.disconnect(); });
 
   function propsOf(n) {
     return typeof n.props === 'string' ? JSON.parse(n.props) : n.props || {};
@@ -87,14 +100,14 @@
       const size = n.type === 'model' ? 46 : n.type === 'sns' ? (p.level === 'assembly' ? 26 : 32) : 14 + Math.min(26, Math.log2(1 + n.degree) * 5);
       elements.push({
         data: {
-          id: String(n.id), label: shortLabel(n, p), type: n.type, color: t.color, shape: t.shape, size,
+          id: String(n.id), label: shortLabel(n, p), type: n.type, color: colorOf(n.type), shape: t.shape, size,
           sev: severity(n), missing: !!p.missing, unused: !!p.unused
         }
       });
     }
     for (const e of data.edges) {
       const s = EDGE[e.type] || EDGE.part_of;
-      elements.push({ data: { id: `e${e.source}-${e.target}-${e.type}`, source: String(e.source), target: String(e.target), type: e.type, color: s.color, arrow: s.arrow, weight: e.weight } });
+      elements.push({ data: { id: `e${e.source}-${e.target}-${e.type}`, source: String(e.source), target: String(e.target), type: e.type, color: edgeColor(e.type), arrow: s.arrow, weight: e.weight } });
     }
     cy?.destroy();
     cy = cytoscape({
@@ -106,24 +119,24 @@
       style: [
         { selector: 'node', style: {
           'background-color': 'data(color)', shape: 'data(shape)', width: 'data(size)', height: 'data(size)',
-          label: 'data(label)', 'font-size': 10, 'font-family': 'IBM Plex Sans, system-ui, sans-serif', color: '#15181c',
+          label: 'data(label)', 'font-size': 11, 'font-family': cssVar('--font'), color: cssVar('--ink'),
           'text-valign': 'bottom', 'text-margin-y': 4, 'text-wrap': 'ellipsis', 'text-max-width': 150,
-          'min-zoomed-font-size': 7, 'text-background-color': '#fffefb', 'text-background-opacity': 0.75, 'text-background-padding': 1,
+          'min-zoomed-font-size': 7, 'text-background-color': cssVar('--surface'), 'text-background-opacity': 0.8, 'text-background-padding': 1,
           'border-width': 0
         } },
         { selector: 'node[type="sns"], node[type="model"]', style: { 'font-weight': 600, 'font-size': 11 } },
-        { selector: 'node[sev="warning"]', style: { 'border-width': 3, 'border-color': '#b06d00' } },
-        { selector: 'node[sev="error"]', style: { 'border-width': 3.5, 'border-color': '#a3161b' } },
-        { selector: 'node[?missing]', style: { 'background-opacity': 0.12, 'border-width': 2, 'border-style': 'dashed', 'border-color': '#a3161b', color: '#7d1014' } },
-        { selector: 'node[?unused]', style: { 'border-width': 2, 'border-style': 'dotted', 'border-color': '#7a7f86' } },
+        { selector: 'node[sev="warning"]', style: { 'border-width': 3, 'border-color': cssVar('--warning') } },
+        { selector: 'node[sev="error"]', style: { 'border-width': 3.5, 'border-color': cssVar('--error') } },
+        { selector: 'node[?missing]', style: { 'background-opacity': 0.12, 'border-width': 2, 'border-style': 'dashed', 'border-color': cssVar('--error'), color: cssVar('--error') } },
+        { selector: 'node[?unused]', style: { 'border-width': 2, 'border-style': 'dotted', 'border-color': cssVar('--muted') } },
         { selector: 'edge', style: {
           width: 'mapData(weight, 1, 10, 1.2, 4)', 'line-color': 'data(color)', 'target-arrow-color': 'data(color)',
           'target-arrow-shape': 'data(arrow)', 'arrow-scale': 0.8, 'curve-style': 'bezier', opacity: 0.85
         } },
         { selector: 'edge[type="part_of"]', style: { width: 1, opacity: 0.7 } },
-        { selector: 'node:selected', style: { 'border-width': 4, 'border-color': '#c25400', 'border-style': 'solid' } },
+        { selector: 'node:selected', style: { 'border-width': 4, 'border-color': cssVar('--focus'), 'border-style': 'solid' } },
         { selector: '.faded', style: { opacity: 0.12, 'text-opacity': 0 } },
-        { selector: '.hl', style: { 'border-width': 4, 'border-color': '#c25400' } }
+        { selector: '.hl', style: { 'border-width': 4, 'border-color': cssVar('--focus') } }
       ]
     });
     runLayout();
@@ -242,7 +255,7 @@
   <div class="row wrap">
     {#each Object.entries(TYPES) as [k, t]}
       <button class="chip" class:active={types[k]} aria-pressed={types[k]} onclick={() => toggleType(k)} disabled={loading}>
-        <span class="dot" style="background:{t.color}"></span>{t.label} <strong>{counts[k] || 0}</strong>
+        <span class="dot" style="background:{colorOf(k)}"></span>{t.label} <strong>{counts[k] || 0}</strong>
       </button>
     {/each}
   </div>
@@ -307,7 +320,7 @@
       </div>
     {:else}
       <div class="row head">
-        <span class="badge" style="background:{TYPES[selected.type]?.color};color:#fff">{TYPES[selected.type]?.label.split(' ')[0]}</span>
+        <span class="badge" style="background:{colorOf(selected.type)};color:{dark ? '#14171c' : '#ffffff'}">{TYPES[selected.type]?.label.split(' ')[0]}</span>
         <button class="ghost small" onclick={clearSelection} aria-label="Auswahl aufheben">✕</button>
       </div>
       <h2 class="h3 title">{selected.label}</h2>
@@ -374,7 +387,7 @@
             <span class="muted">{g.label} ({g.nodes.length})</span>
             <ul>
               {#each g.nodes.slice(0, 30) as n}
-                <li><button class="link" onclick={() => select(String(n.id), true)}><span class="dot" style="background:{TYPES[n.type]?.color}"></span>{n.label}</button></li>
+                <li><button class="link" onclick={() => select(String(n.id), true)}><span class="dot" style="background:{colorOf(n.type)}"></span>{n.label}</button></li>
               {/each}
               {#if g.nodes.length > 30}<li class="hint">… {g.nodes.length - 30} weitere</li>{/if}
             </ul>
@@ -397,7 +410,7 @@
   .second { gap: 10px; }
   .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-1); overflow: hidden; }
   .seg button { border: none; border-radius: 0; }
-  .seg button.on { background: var(--accent); color: #fff; }
+  .seg button.on { background: var(--accent-btn); color: var(--accent-ink); }
   .focusbar, .insights { gap: 8px; font-size: 13.5px; }
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
   .canvas-card { position: relative; overflow: hidden; }
@@ -405,7 +418,7 @@
   .overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255,255,255,.7); z-index: 2; color: var(--muted); }
   .trunc { padding: 8px 12px; background: var(--warning-soft); color: var(--warning); font-size: 13px; }
   .legend { display: flex; gap: 16px; flex-wrap: wrap; padding: 8px 12px; border-top: 1px solid var(--line); font-size: 12.5px; align-items: center; }
-  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -2px; margin-right: 4px; background: #fff; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -2px; margin-right: 4px; background: var(--surface); }
   .l-err { border: 3px solid var(--error); }
   .l-warn { border: 3px solid #b06d00; }
   .l-miss { border: 2px dashed var(--error); }

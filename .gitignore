@@ -7,6 +7,9 @@
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/desktop/web/
+frontend/desktop/build/
+*.msi
 
 # --- Backend (Go)
 backend/data/

@@ -1,7 +1,7 @@
 <script>
   import { api } from '../lib/api.js';
   import { session, toast } from '../lib/state.svelte.js';
-  import { go } from '../lib/router.svelte.js';
+  import { go, href } from '../lib/router.svelte.js';
   import ApiTokens from '../components/ApiTokens.svelte';
 
   let { forced = false } = $props();
@@ -47,7 +47,13 @@
         Bitte legen Sie jetzt ein eigenes Passwort fest. Als „aktuelles Passwort“ geben Sie das erhaltene Startpasswort ein.</p>
     </div>
   {:else}
-    <h1>Konto</h1>
+    <header class="pagehead">
+      <div class="titles">
+        <nav class="crumbs" aria-label="Pfad"><ol><li><a href={href('/')}>Projekte</a></li><li aria-current="page">Konto</li></ol></nav>
+        <h1>Konto</h1>
+        <p class="sub">Name, Passwort und API-Tokens. Darstellung und Bedienung stellen Sie unter <a href={href('/einstellungen')}>Einstellungen</a> ein.</p>
+      </div>
+    </header>
     <form class="card card-pad stack" onsubmit={saveName} novalidate>
       <h2>Profil</h2>
       <label><span class="lbl">Name</span><input bind:value={name} autocomplete="name" /></label>
@@ -73,7 +79,8 @@
 
 <style>
   .mailhint { display: block; }
-  .narrow { max-width: 880px; display: flex; flex-direction: column; gap: 16px; }
+  .narrow { max-width: 880px; display: flex; flex-direction: column; gap: var(--s-4); }
+  .pagehead { margin-bottom: 0; }
   .lbl { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
   .notice { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--r-2); padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; }
 </style>

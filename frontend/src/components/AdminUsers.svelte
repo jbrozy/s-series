@@ -1,4 +1,6 @@
 <script>
+  import SortTh from './SortTh.svelte';
+  import { createSorter } from '../lib/sort.svelte.js';
   import { onMount } from 'svelte';
   import { api, fmt, labels } from '../lib/api.js';
   import { href } from '../lib/router.svelte.js';
@@ -23,6 +25,7 @@
   let deleteTarget = $state(null);
   let busy = $state(false);
 
+  const sorter = createSorter('name', { name: (u) => u.name, email: (u) => u.email, role: (u) => u.role, projects: (u) => u.projects, last: (u) => (u.lastLoginAt ? -new Date(u.lastLoginAt).getTime() : null) }, 'asc', 'scheck.sort.users');
   const shown = $derived(users.filter((u) => {
     if (status === 'admins' && u.role !== 'admin') return false;
     if (status === 'disabled' && !u.disabled) return false;
@@ -167,9 +170,9 @@
 
 <section class="card">
   <table>
-    <thead><tr><th>Name</th><th>E-Mail</th><th>Rolle</th><th class="right">Projekte</th><th>Letzte Anmeldung</th><th><span class="sr-only">Aktionen</span></th></tr></thead>
+    <thead><tr><SortTh {sorter} key="name">Name</SortTh><SortTh {sorter} key="email">E-Mail</SortTh><SortTh {sorter} key="role">Rolle</SortTh><SortTh {sorter} key="projects" align="right">Projekte</SortTh><SortTh {sorter} key="last">Letzte Anmeldung</SortTh><th><span class="sr-only">Aktionen</span></th></tr></thead>
     <tbody>
-      {#each shown as u (u.id)}
+      {#each sorter.apply(shown) as u (u.id)}
         <tr class:off={u.disabled}>
           <td>
             <strong>{u.name}</strong>{#if u.id === session.user.id} <span class="hint">(Sie)</span>{/if}

@@ -2,7 +2,8 @@
   import { onMount, untrack } from 'svelte';
   import { api, fmt, labels } from '../lib/api.js';
   import { route, go, href } from '../lib/router.svelte.js';
-  import { toastError, session } from '../lib/state.svelte.js';
+  import { toast, toastError, session } from '../lib/state.svelte.js';
+  import { prefs } from '../lib/prefs.svelte.js';
   import FileViewer from './FileViewer.svelte';
   import Modal from './Modal.svelte';
   import FindingActivity from './FindingActivity.svelte';
@@ -28,13 +29,38 @@
   let runId = $state(untrack(() => (snapshot.latestRun?.status === 'done' ? snapshot.latestRun.id : '')));
   let data = $state(null);
   let loading = $state(false);
-  let q = $state(route.query.q || '');
-  let severity = $state(route.query.severity || '');
-  let category = $state(route.query.category || '');
-  let status = $state(route.query.status || 'open');
+  // filters: from the address if given, otherwise as last used in this project (ISO 9241-110 Aufgabenangemessenheit)
+  const FKEY = `scheck.findings.${untrack(() => project.id)}`;
+  const fromUrl = ['q', 'severity', 'category', 'status', 'assignee', 'change', 'sort'].some((k) => k in route.query);
+  const saved = fromUrl ? {} : (() => { try { return JSON.parse(localStorage.getItem(FKEY) || '{}'); } catch { return {}; } })();
+  const pick = (k, d) => (k in route.query ? route.query[k] : saved[k] ?? d);
+  let q = $state(pick('q', ''));
+  let severity = $state(pick('severity', ''));
+  let category = $state(pick('category', ''));
+  let status = $state(pick('status', 'open'));
   let fileId = $state(route.query.file || '');
-  let assignee = $state(route.query.assignee || '');
-  let change = $state(route.query.change || '');
+  let assignee = $state(pick('assignee', ''));
+  let change = $state(pick('change', ''));
+  let sort = $state(pick('sort', 'severity'));
+  const isDefault = $derived(!q && !severity && !category && status === 'open' && !assignee && !change && sort === 'severity');
+  function rememberFilters() {
+    try { localStorage.setItem(FKEY, JSON.stringify({ q, severity, category, status, assignee, change, sort })); } catch { /* filters apply for this visit only */ }
+  }
+  function resetFilters() {
+    q = ''; severity = ''; category = ''; status = 'open'; assignee = ''; change = ''; sort = 'severity'; offset = 0;
+    load();
+  }
+  // ---- selection for bulk actions and keyboard navigation
+  let selected = $state({});
+  let cursor = $state(-1);
+  let bulkAssign = $state('');
+  let bulkDismiss = $state(false);
+  let bulkNote = $state('');
+  let bulkError = $state('');
+  let bulkBusy = $state(false);
+  const selectedIds = $derived(Object.keys(selected).filter((k) => selected[k]).map(Number));
+  const allOnPage = $derived(!!data?.items?.length && data.items.every((f) => selected[f.id]));
+  function toggleAll(on) { const n = {}; if (on) for (const f of data.items) n[f.id] = true; selected = n; }
   let members = $state([]);
   let activityFor = $state(null);
   let dismissError = $state('');
@@ -64,7 +90,10 @@
       if (!data) data = await api.get(`/runs/${runId}/findings?limit=1`).catch(() => null);
       return;
     }
-    const p = new URLSearchParams({ limit, offset });
+    rememberFilters();
+    selected = {};
+    cursor = -1;
+    const p = new URLSearchParams({ limit, offset, sort });
     if (assignee) p.set('assignee', assignee);
     if (change) p.set('change', change);
     if (severity) p.set('severity', severity);
@@ -104,6 +133,51 @@
       if (status && status !== st) data.items = data.items.filter((x) => x.id !== f.id);
       onchange?.();
     } catch (e) { toastError(e); }
+  }
+
+  async function bulk(body, text) {
+    bulkBusy = true;
+    bulkError = '';
+    try {
+      const r = await api.post(`/runs/${runId}/findings/bulk`, { ids: selectedIds, ...body });
+      toast(`${r.updated} ${r.updated === 1 ? 'Befund' : 'Befunde'} ${text}`);
+      bulkDismiss = false;
+      bulkNote = '';
+      bulkAssign = '';
+      await load();
+      onchange?.();
+    } catch (e) { bulkError = e.message; toastError(e); } finally { bulkBusy = false; }
+  }
+  function bulkStatus(st) {
+    const text = { accepted: 'bestätigt', fixed: 'als behoben markiert', open: 'wieder geöffnet' }[st];
+    bulk({ action: 'status', status: st }, text);
+  }
+  function bulkDismissConfirm() {
+    if (!bulkNote.trim()) { bulkError = 'Bitte begründen, warum die ausgewählten Befunde keine Fehler sind.'; return; }
+    bulk({ action: 'status', status: 'dismissed', note: bulkNote }, 'verworfen');
+  }
+  function doBulkAssign(uid) {
+    const name = members.find((m) => m.userId === uid)?.name;
+    bulk({ action: 'assign', userId: uid }, uid ? `${name} zugewiesen` : 'ohne Zuständigen');
+  }
+
+  // keyboard: j/k move, x selects (only when single-key shortcuts are on)
+  function onKey(e) {
+    if (!prefs.shortcuts || e.ctrlKey || e.metaKey || e.altKey || !data?.items?.length) return;
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+    if (document.querySelector('[role=dialog][aria-modal=true]')) return;
+    if (e.key === 'j' || e.key === 'k') {
+      e.preventDefault();
+      cursor = Math.max(0, Math.min(data.items.length - 1, cursor + (e.key === 'j' ? 1 : -1)));
+      document.getElementById(`finding-${data.items[cursor].id}`)?.focus();
+    } else if (e.key === 'x' && cursor >= 0 && canEdit) {
+      e.preventDefault();
+      const id = data.items[cursor].id;
+      selected = { ...selected, [id]: !selected[id] };
+    } else if (e.key === 'Escape' && selectedIds.length) {
+      selected = {};
+    }
   }
 
   async function assign(f, uid) {
@@ -246,14 +320,56 @@
       {#if status === 'open' && !severity && !category && !q}
         Keine offenen Befunde in diesem Upload. Erledigte Befunde finden Sie über den Statusfilter.
       {:else}
-        Keine Befunde für diese Filter.
+        <p>Keine Befunde für diese Filter.</p>
+        {#if !isDefault}<button class="small" onclick={resetFilters}>Filter zurücksetzen</button>{/if}
       {/if}
     </div>
   {:else}
-    <div class="list card" class:loading>
-      {#each data.items as f (f.id)}
-        <article class="finding {f.severity}" class:closed={f.status !== 'open'}>
+    <div class="listbar row wrap">
+      {#if canEdit}
+        <label class="row selall"><input type="checkbox" checked={allOnPage} onchange={(e) => toggleAll(e.currentTarget.checked)} />
+          Alle {data.items.length} auf dieser Seite auswählen</label>
+      {/if}
+      <span class="spacer"></span>
+      <label class="row sortlbl">Sortieren nach
+        <select value={sort.replace('-', '')} onchange={(e) => { sort = (sort.startsWith('-') ? '-' : '') + e.currentTarget.value; offset = 0; load(); }}>
+          <option value="severity">Schwere</option><option value="dmc">DMC / Datei</option><option value="category">Kategorie</option>
+          <option value="code">Prüfcode</option><option value="status">Status</option><option value="assignee">Zuständig</option>
+        </select>
+      </label>
+      <button class="small" onclick={() => { sort = sort.startsWith('-') ? sort.slice(1) : '-' + sort; offset = 0; load(); }}
+        aria-label={sort.startsWith('-') ? 'Absteigend sortiert, auf aufsteigend umschalten' : 'Aufsteigend sortiert, auf absteigend umschalten'}>
+        {sort.startsWith('-') ? 'absteigend' : 'aufsteigend'}
+      </button>
+      {#if !isDefault}<button class="small" onclick={resetFilters}>Filter zurücksetzen</button>{/if}
+    </div>
+
+    {#if selectedIds.length}
+      <div class="bulkbar" role="region" aria-label="Sammelaktionen">
+        <strong>{selectedIds.length} ausgewählt</strong>
+        <select aria-label="Ausgewählte Befunde zuweisen" bind:value={bulkAssign} onchange={() => bulkAssign !== '' && doBulkAssign(bulkAssign === '-' ? '' : bulkAssign)} disabled={bulkBusy}>
+          <option value="">Zuweisen an …</option>
+          <option value="-">Niemand (Zuweisung aufheben)</option>
+          {#each members as m}<option value={m.userId}>{m.name}</option>{/each}
+        </select>
+        <button class="small" disabled={bulkBusy} onclick={() => bulkStatus('accepted')}>Bestätigen</button>
+        <button class="small" disabled={bulkBusy} onclick={() => bulkStatus('fixed')}>Behoben</button>
+        <button class="small" disabled={bulkBusy} onclick={() => { bulkDismiss = true; bulkError = ''; }}>Verwerfen …</button>
+        <button class="small" disabled={bulkBusy} onclick={() => bulkStatus('open')}>Wieder öffnen</button>
+        <span class="spacer"></span>
+        <button class="small ghost" onclick={() => (selected = {})}>Auswahl aufheben</button>
+      </div>
+    {/if}
+
+    <div class="list card" class:loading aria-busy={loading}>
+      {#each data.items as f, i (f.id)}
+        <article class="finding" id={`finding-${f.id}`} tabindex="-1" class:closed={f.status !== 'open'} class:sel={selected[f.id]}
+          class:cursor={i === cursor} onfocus={() => (cursor = i)} aria-label={`${labels.severity[f.severity]}: ${f.message}`}>
           <div class="row top">
+            {#if canEdit}
+              <input type="checkbox" class="pick" checked={!!selected[f.id]} onchange={(e) => (selected = { ...selected, [f.id]: e.currentTarget.checked })}
+                aria-label={`Befund auswählen: ${f.code} in ${f.dmc || f.file}`} />
+            {/if}
             <span class="badge {f.severity}">{labels.severity[f.severity]}</span>
             <span class="badge outline">{labels.category[f.category] || f.category}</span>
             <code class="code">{f.code}</code>
@@ -313,8 +429,26 @@
   {/if}
 {/if}
 
+<svelte:window onkeydown={onKey} />
+
 {#if viewer}
   <FileViewer snapshotId={snapshot.id} file={viewer.file} line={viewer.line} onclose={() => (viewer = null)} />
+{/if}
+
+{#if bulkDismiss}
+  <Modal title={`${selectedIds.length} Befunde verwerfen`} onclose={() => (bulkDismiss = false)}>
+    <div class="stack">
+      <label><span class="lbl">Begründung für alle ausgewählten Befunde</span>
+        <input bind:value={bulkNote} aria-invalid={!!bulkError} aria-describedby={bulkError ? 'bulk-err' : 'bulk-hint'}
+          placeholder="z. B. Schreibweise laut Kundenvorgabe CR-118" onkeydown={(e) => e.key === 'Enter' && bulkDismissConfirm()} /></label>
+      {#if bulkError}<p class="error-box" id="bulk-err" role="alert">{bulkError}</p>{/if}
+      <p class="hint" id="bulk-hint">Die Befunde bleiben auch in späteren Analysen dieses Projekts verworfen. Jede Änderung steht einzeln im Protokoll.</p>
+      <div class="row"><span class="spacer"></span>
+        <button onclick={() => (bulkDismiss = false)}>Abbrechen</button>
+        <button class="primary" disabled={bulkBusy} onclick={bulkDismissConfirm}>Verwerfen</button>
+      </div>
+    </div>
+  </Modal>
 {/if}
 
 {#if activityFor}
@@ -338,32 +472,34 @@
 {/if}
 
 <style>
-  .toolbar { margin-bottom: var(--s-4); padding: var(--s-3) 0; border-top: 1px solid var(--ink-2); border-bottom: 1px solid var(--line-strong); }
+  .listbar { margin-bottom: var(--s-2); gap: var(--s-2) var(--s-3); font-size: var(--t-sm); }
+  .selall, .sortlbl { gap: var(--s-2); font-weight: 600; color: var(--ink-2); }
+  .sortlbl select { width: auto; }
+  .bulkbar { position: sticky; top: calc(var(--topbar-h) + var(--s-2)); z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2);
+    padding: var(--s-2) var(--s-3); margin-bottom: var(--s-2); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--r-1); box-shadow: var(--e-2); }
+  .bulkbar select { width: auto; min-height: 28px; font-size: var(--t-sm); }
+  .pick { flex: none; }
+  .toolbar { margin-bottom: var(--s-4); padding: var(--s-3) var(--s-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-1); }
   .toolbar .row { gap: var(--s-2); }
-  .state { padding: var(--s-5) var(--s-6); display: flex; flex-direction: column; gap: var(--s-3); max-width: 760px; border-top: 3px solid var(--rule); }
+  .state { padding: var(--s-5); display: flex; flex-direction: column; gap: var(--s-3); max-width: 760px; }
   .sel { width: auto; min-width: 170px; }
   .search { min-width: 220px; }
   .filterinfo { margin-top: var(--s-3); }
-  .second { margin-top: var(--s-3); }
+  .second { margin-top: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--line); }
   .chip strong { font-weight: 600; }
   .assign { width: auto; min-height: 28px; padding: 2px var(--s-2); font-size: var(--t-sm); max-width: 220px; }
   .who { font-size: var(--t-sm); color: var(--ink-2); }
-  .finding.gone { border-left-color: var(--ok); }
   .resolved-hint { margin-bottom: var(--s-3); }
   /* one record sheet, entries divided by hairlines */
   .list { display: flex; flex-direction: column; }
   .list.loading { opacity: .6; }
-  .finding {
-    padding: var(--s-3) var(--s-5) var(--s-3) calc(var(--s-5) - 4px);
-    border-left: 4px solid var(--line-strong); border-top: 1px solid var(--line);
-    display: flex; flex-direction: column; gap: var(--s-2);
-  }
+  .finding { padding: var(--s-3) var(--s-4); border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: var(--s-2); }
   .finding:first-child { border-top: none; }
-  .finding.error { border-left-color: var(--error); }
-  .finding.warning { border-left-color: var(--warning); }
-  .finding.info { border-left-color: var(--info); }
+  .finding:focus { outline: 2px solid var(--focus); outline-offset: -2px; }
+  .finding.sel { background: var(--accent-soft); }
   .finding.closed { background: var(--surface-2); }
   .finding.closed .msg { color: var(--ink-2); }
+  .finding.gone { background: var(--surface); }
   .top { gap: var(--s-2); }
   .code { color: var(--muted); font-size: var(--t-xs); }
   .msg { font-size: 15px; }

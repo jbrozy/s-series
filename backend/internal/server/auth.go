@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -14,15 +15,16 @@ import (
 const sessionCookie = "scheck_session"
 
 type User struct {
-	ID                 string     `json:"id"`
-	Email              string     `json:"email"`
-	Name               string     `json:"name"`
-	Role               string     `json:"role"`
-	Disabled           bool       `json:"disabled"`
-	MustChangePassword bool       `json:"mustChangePassword"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	LastLogin          *time.Time `json:"lastLoginAt"`
-	Token              string     `json:"-"` // name of the API token when authenticated by token
+	ID                 string          `json:"id"`
+	Email              string          `json:"email"`
+	Name               string          `json:"name"`
+	Role               string          `json:"role"`
+	Disabled           bool            `json:"disabled"`
+	MustChangePassword bool            `json:"mustChangePassword"`
+	CreatedAt          time.Time       `json:"createdAt"`
+	LastLogin          *time.Time      `json:"lastLoginAt"`
+	Token              string          `json:"-"` // name of the API token when authenticated by token
+	Preferences        json.RawMessage `json:"preferences"`
 }
 
 func (u *User) IsAdmin() bool { return u.Role == "admin" }
@@ -94,11 +96,14 @@ func (s *Server) admin(h authedHandler) http.HandlerFunc {
 	})
 }
 
-const userCols = `id, email, name, role, disabled, must_change_password, created_at, last_login_at`
+const userCols = `id, email, name, role, disabled, must_change_password, created_at, last_login_at, preferences`
 
 func scanUser(sc interface{ Scan(...any) error }) (*User, error) {
 	u := &User{}
-	err := sc.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.Disabled, &u.MustChangePassword, &u.CreatedAt, &u.LastLogin)
+	var prefs []byte
+	err := sc.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.Disabled, &u.MustChangePassword, &u.CreatedAt, &u.LastLogin, &prefs)
+	norm, _ := json.Marshal(parsePreferences(prefs))
+	u.Preferences = norm
 	return u, err
 }
 
